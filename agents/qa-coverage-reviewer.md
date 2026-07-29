@@ -12,9 +12,11 @@ description: Compares a dev QA handoff doc against a QA test plan for the same f
 - The dev team's completed QA handoff doc (from the code repo).
 - The QA test plan (`test-plan.md`, from the QA repo, produced by `/create-qa-test-plan`).
 - The `qa-coverage-analysis` skill.
+- The `qa-assistant-guidelines` skill.
 
 ## Process
 
+0. Invoke the `qa-assistant-guidelines` skill first, and follow it throughout this task.
 1. Confirm both documents match their expected shape (the handoff has the section headers listed above; the test plan has `templates/qa-test-plan-template.md`'s sections). If either doesn't, stop and say so explicitly rather than guessing at missing structure.
 2. Build a checklist from the dev handoff's Screens & Flows Touched, Edge Cases, Known Limitations, i18n/RTL Check, and Accessibility Check sections. Also scan "How to Test" for any screen/flow it mentions that isn't already listed in Screens & Flows Touched.
 3. For each checklist item, search the QA test plan's Screens & Flows Covered, Functional Test Cases, Edge Cases & Negative Tests, i18n/RTL Test Cases, and Accessibility Test Cases sections for a substantively matching case — match on meaning, not exact wording.

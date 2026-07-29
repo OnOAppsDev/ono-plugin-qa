@@ -42,15 +42,15 @@ claude --plugin-dir /path/to/ono-plugin-qa
 
 # Phase 1 — while dev is implementing
 /create-qa-test-plan checkout-redesign https://figma.com/file/... --spec=./checkout-redesign-lld.md
-#  → writes ono-app-x-qa/checkout-redesign/test-plan.md, status: draft
+#  → writes ono-app-x-qa/checkout-redesign/test-plan.md (status: draft) and test-cases.xlsx (Hebrew/RTL)
 
 /approve-qa-test-plan checkout-redesign
 #  → flips status: approved once you're satisfied with the plan
 
 # If the design/spec changes before dev hands off:
 /sync-qa-test-plan checkout-redesign
-#  → refreshes test-plan.md against its recorded sources, appends a Change Log entry
-#     (resets status to draft if the change was substantive)
+#  → refreshes test-plan.md against its recorded sources, appends a Change Log entry,
+#     and regenerates test-cases.xlsx (resets status to draft if the change was substantive)
 
 # Phase 2 — after dev hands off (dev has run /create-dev-qa-notes)
 /check-qa-coverage checkout-redesign
@@ -88,7 +88,7 @@ Both commands resolve the code repo and QA repo paths in this order, stopping to
 3. Auto-detect: list the working directory's immediate subdirectories that contain a `.git` folder. If exactly two are found and exactly one has `qa` in its name, that's the QA repo and the other is the code repo — this mapping is then offered to be cached to `.claude/qa-workspace.json`.
 4. Otherwise — e.g. the current folder is itself a git repo (wrong launch point), or there aren't exactly two identifiable repos — the command stops, explains what it actually found, and asks the human to clarify which folder is which or to relaunch from the correct workspace root.
 
-Within the QA repo, artifacts are organized per feature: `<feature-slug>/test-plan.md` and `<feature-slug>/coverage-report.md`.
+Within the QA repo, artifacts are organized per feature: `<feature-slug>/test-plan.md`, `<feature-slug>/test-cases.xlsx`, and `<feature-slug>/coverage-report.md`.
 
 ## Safety hooks
 
@@ -96,7 +96,7 @@ One hook is always active while the plugin is installed:
 
 | Hook | What it does |
 |---|---|
-| `block-qa-repo-git-writes` | Blocks any `git commit`/`git push` run via Bash while this plugin is active. It only ever writes Markdown files — the QA engineer always reviews and pushes manually. |
+| `block-qa-repo-git-writes` | Blocks any `git commit`/`git push` run via Bash while this plugin is active. It only ever writes local files (Markdown plans/reports, the Hebrew/RTL `test-cases.xlsx` export) — the QA engineer always reviews and pushes manually. |
 
 ## MCP servers
 
@@ -107,7 +107,8 @@ One hook is always active while the plugin is installed:
 | Piece | Contents |
 |---|---|
 | `commands/` | `create-qa-test-plan`, `approve-qa-test-plan`, `sync-qa-test-plan`, `check-qa-coverage` |
-| `skills/` | `qa-test-planning`, `qa-test-plan-sync`, `qa-coverage-analysis` |
+| `skills/` | `qa-test-planning`, `qa-test-plan-sync`, `qa-coverage-analysis`, `qa-assistant-guidelines` |
 | `agents/` | `qa-test-designer`, `qa-test-plan-syncer`, `qa-coverage-reviewer` |
-| `templates/` | `qa-test-plan-template.md`, `qa-coverage-report-template.md` |
+| `templates/` | `qa-test-plan-template.md`, `qa-coverage-report-template.md`, `qa-test-cases-xlsx-schema.md` |
+| `scripts/` | `build-test-cases-xlsx.mjs` — zero-dependency Node OOXML writer for the Hebrew/RTL Excel export |
 | `hooks/` | `block-qa-repo-git-writes` |

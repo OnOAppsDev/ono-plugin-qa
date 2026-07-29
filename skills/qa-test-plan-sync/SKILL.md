@@ -12,6 +12,7 @@ description: Methodology for refreshing an existing QA test plan against its rec
 5. **Update the plan in place** with additions/changes, keeping the existing ID scheme and table shapes.
 6. **Append one dated "Change Log" entry** describing exactly what was added, changed, or flagged stale, and which source triggered each change. Never edit or remove a past entry.
 7. **If the plan's `status` was `approved` and anything substantive changed**, reset `status` to `draft` and clear `approved_by`/`approved_date`, and say so explicitly in the new Change Log entry so it's clear re-approval is needed. If nothing substantive changed, leave `status` untouched.
+8. **Regenerate `test-cases.xlsx`** from the plan's current test cases per `templates/qa-test-cases-xlsx-schema.md`, the same way `qa-test-planning` produces it initially — it's a derived artifact, so rebuild it every sync rather than leaving a stale Hebrew export next to an updated plan. Note in the Change Log entry that the export was regenerated.
 
 ## Unchanged constraints
 

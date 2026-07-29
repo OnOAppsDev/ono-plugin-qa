@@ -4,6 +4,12 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-07-29
+
+### Added
+- `/create-qa-test-plan` now also exports the plan's test cases to a Hebrew/RTL `test-cases.xlsx` file (fixed 6-column schema: Test ID / Summary / Action / Expected Result / Test Data-Parameter / Comments) alongside `test-plan.md`, per the new `templates/qa-test-cases-xlsx-schema.md` contract and the zero-dependency `scripts/build-test-cases-xlsx.mjs` builder. `/sync-qa-test-plan` regenerates it whenever the plan's test cases change.
+- `qa-assistant-guidelines` skill — foundational working rules (read source documents in full without skipping, think through the simplest/fastest/safest approach before acting, proofread output before presenting it, never write to a shared destination unless explicitly told to) now invoked first by `qa-test-designer`, `qa-coverage-reviewer`, and `qa-test-plan-syncer`.
+
 ## [0.4.0] - 2026-07-21
 
 ### Changed

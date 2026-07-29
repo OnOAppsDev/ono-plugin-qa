@@ -14,6 +14,7 @@ description: Methodology for authoring a QA test plan from Figma and/or spec/LLD
 7. **Log anything the sources leave ambiguous** (an undesigned error state, an unclear interaction, a Figma/spec conflict) as an open question for a designer/PM/dev to resolve — never silently guess.
 8. **Record every source actually consulted** — Figma link, spec/LLD path/link, and anything else QA supplied — into the "Input Sources" table, including explicit `N/A — <reason>` rows for any category that doesn't apply. This is what `/sync-qa-test-plan` later re-checks when sources change.
 9. **Populate `templates/qa-test-plan-template.md` in full**, including "Screens & Flows Covered" with enough detail (frame names/links or spec section references) that `/check-qa-coverage` can later match it against the dev handoff's "Screens & Flows Touched".
+10. **Export the same test cases to a Hebrew/RTL Excel file** per `templates/qa-test-cases-xlsx-schema.md`: take the Functional, Edge Cases (From Design/Spec and Universal), i18n/RTL, and Accessibility test cases just authored, translate each into natural, idiomatic Hebrew (not a literal machine translation) as the schema's Test ID/Summary/Action/Expected Result/Test Data/Comments columns, write them to a temporary JSON file in the schema's shape, and run `node "${CLAUDE_PLUGIN_ROOT}/scripts/build-test-cases-xlsx.mjs" <input.json> <output.xlsx>` to produce `test-cases.xlsx`.
 
 ## Unchanged constraints
 

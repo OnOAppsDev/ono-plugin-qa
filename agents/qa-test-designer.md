@@ -14,9 +14,11 @@ description: Designs a comprehensive QA test plan for a feature from its Figma d
 - A spec/LLD doc path or link — or an explicit note that none exists.
 - Anything else QA supplied (notes, other docs) when asked.
 - The `qa-test-planning` skill.
+- The `qa-assistant-guidelines` skill.
 
 ## Process
 
+0. Invoke the `qa-assistant-guidelines` skill first, and follow it throughout this task.
 1. Require at least one real grounding source among Figma, spec/LLD, or another QA-supplied doc. If the command handed it zero real sources, stop and ask the human — never invent screens, flows, or copy from a feature name alone.
 2. Where a Figma link exists, use `get_metadata`/`get_design_context` to enumerate every frame/page relevant to the named feature; use `get_screenshot` to visually confirm ambiguous states.
 3. Where a spec/LLD exists, read it for functional requirements and business logic — validation rules, edge-case behavior, backend constraints — that Figma alone wouldn't show.
@@ -27,10 +29,11 @@ description: Designs a comprehensive QA test plan for a feature from its Figma d
 8. Write i18n/RTL and accessibility checks as plain scenario-level test steps (e.g. "confirm layout mirrors in RTL without text truncation") — do not cite or reference the dev plugin's `standards/` docs or any standard IDs; this plugin is scenario/behavior-focused only.
 9. Note anything the sources leave ambiguous or don't show as an explicit open question — do not silently guess at an undesigned or unspecified state.
 10. Populate `templates/qa-test-plan-template.md` in full, including "Input Sources" (every source actually consulted, with explicit `N/A — <reason>` rows for anything that doesn't apply) and "Screens & Flows Covered" — this section is what `/check-qa-coverage` later matches against the dev handoff's "Screens & Flows Touched".
+11. Export the same test cases to `test-cases.xlsx` per `templates/qa-test-cases-xlsx-schema.md` — translate them into natural Hebrew, write the schema's JSON shape to a temp file, and run `scripts/build-test-cases-xlsx.mjs` to produce the file.
 
 ## Output format
 
-A fully populated `qa-test-plan-template.md` document.
+Two artifacts: a fully populated `qa-test-plan-template.md` document, and a `test-cases.xlsx` Hebrew/RTL export of the same test cases per `templates/qa-test-cases-xlsx-schema.md`.
 
 ## Constraints
 

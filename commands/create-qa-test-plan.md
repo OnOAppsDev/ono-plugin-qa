@@ -14,7 +14,8 @@ Author a QA test plan for the feature in `$ARGUMENTS`, from its Figma design and
 7. The agent inspects the actual Figma frames/screens/states via the `figma` MCP server (`get_metadata`, `get_design_context`, `get_screenshot`) where a Figma link exists, reads the spec/LLD where one exists, and derives functional test cases, edge/negative cases, and open questions grounded strictly in those sources — it does not invent flows they don't show.
 8. Have the agent populate `templates/qa-test-plan-template.md` in full, including "Input Sources" with every source consulted (or marked `N/A — <reason>`).
 9. Write the populated document to `<qa-repo-path>/<feature-slug>/test-plan.md`, creating the folder if needed, with `status: draft`.
-10. Never run `git add`/`commit`/`push` in the QA repo. Tell the human the file was written, that they should review the diff, and that they should run `/approve-qa-test-plan` once satisfied before `/check-qa-coverage` can be used later.
+10. Have the agent export the same test cases to `<qa-repo-path>/<feature-slug>/test-cases.xlsx` per `templates/qa-test-cases-xlsx-schema.md` (Hebrew, RTL, the fixed 6-column schema).
+11. Never run `git add`/`commit`/`push` in the QA repo. Tell the human both files were written (`test-plan.md` and `test-cases.xlsx`), that they should review the diff, and that they should run `/approve-qa-test-plan` once satisfied before `/check-qa-coverage` can be used later.
 
 ## Resolving the workspace
 
