@@ -1,5 +1,5 @@
 {
-  "description": "Blocks the plugin's own agents from running git commit/push — QA artifacts are always reviewed and committed manually by the QA engineer.",
+  "description": "Blocks git commit/push when the active repository is the QA repo this plugin writes into, or the plugin's own source repo — QA artifacts are always reviewed and committed manually by the QA engineer. Git writes in unrelated repositories are not affected.",
   "hooks": {
     "PreToolUse": [
       {

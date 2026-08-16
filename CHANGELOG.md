@@ -4,6 +4,15 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.1] - 2026-08-16
+
+### Fixed
+- The `block-qa-repo-git-writes` hook no longer blocks `git commit`/`git push` in **every** repository on the machine merely because this plugin is installed. It matched on the command string alone with no notion of where the command would run, so an unrelated repo (e.g. `ono-mobile-dev-plugin`) could not be committed to while this plugin was enabled. It now resolves the active repository root with `git rev-parse --show-toplevel` and blocks only when that root is a repo this plugin actually touches: the QA repo it writes `test-plan.md` / `coverage-report.md` / `test-cases.xlsx` into, or this plugin's own source repo. Protection inside the QA repo is unchanged, an explicit `git -C <qa-repo>` from outside is still caught, and read-only git commands plus `git add` still pass through everywhere.
+- The QA repo is identified the same way the commands resolve it (see "Resolving the workspace" in `commands/create-qa-test-plan.md`): `.claude/qa-workspace.json`'s `qaRepoPath` is authoritative when present, otherwise the documented `qa`-in-the-folder-name convention. The plugin's own repo is identified by the `name` in its `.claude-plugin/plugin.json`, so a differently-named clone is still protected.
+
+### Added
+- `hooks/block-qa-repo-git-writes.test.sh` — 24 cases over throwaway temp git repos covering both directions: blocked inside the QA repo (including from a feature subfolder and via `git -C`) and inside the plugin repo, allowed in unrelated repos, in the sibling code repo, and outside any repo; plus cache-authoritative resolution and the folder-name fallback. Run with `bash hooks/block-qa-repo-git-writes.test.sh`.
+
 ## [0.5.0] - 2026-07-29
 
 ### Added
