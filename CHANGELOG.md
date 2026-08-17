@@ -4,6 +4,11 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - 2026-08-17
+
+### Added
+- `/generate-automation-scripts` — generates Appium (WebdriverIO) automation from an **approved** test plan's test cases, via the new `automation-test-writer` agent and `automation-test-generation` skill. One `it()` per test-plan `id` (e.g. `TC1`, `EC1`), locators resolved from the code repo's real `testID`s (never fabricated — an unstable/missing one is flagged with a `// TODO` instead of a guessed XPath), page objects reused across features from `automation/pages/`, native/WebView context switching for the app's WebView content. Scaffolds a minimal `automation/` WebdriverIO project on first use, from `templates/automation-project-scaffold/`. Same write discipline as the rest of the plugin: writes local files only, never `git add`/`commit`/`push`.
+
 ## [0.5.1] - 2026-08-16
 
 ### Fixed
