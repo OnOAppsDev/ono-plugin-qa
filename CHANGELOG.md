@@ -4,6 +4,12 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.0] - 2026-08-25
+
+### Added
+- `/verify-automation-locators` — replays a generated automation spec's `it()` blocks against a live simulator/device via the new `appium` MCP server (`npx appium-mcp@latest`), through the new `automation-locator-verifier` agent and `appium-live-verification` skill. Checks that each locator actually resolves (and is displayed, not just present) at the point in the flow the spec expects, without running the full WebdriverIO/mocha suite. Misses are categorized as a stale locator, a timing issue, a missed WebView context switch, or a genuine platform limitation no locator can ever fix — never reported as a blanket "broken." Stops immediately if it can't open a live Appium session rather than guessing. Writes `<feature-slug>/automation-verification-report.md`; never edits the generated spec/page objects, never `git add`/`commit`/`push`.
+- `appium` MCP server declared in `plugin.json`, alongside `figma`. It's the only piece of this plugin that needs something local and stateful (a reachable Appium install, a booted device) — every other command still works with it entirely absent, and `/generate-automation-scripts` deliberately doesn't depend on it.
+
 ## [0.6.0] - 2026-08-17
 
 ### Added

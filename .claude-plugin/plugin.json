@@ -1,7 +1,7 @@
 {
   "name": "ono-plugin-qa",
-  "description": "Figma- and spec/LLD-grounded QA test planning, approval, sync, dev/QA coverage gap analysis, and Appium automation generation for Ono Apps' features across React, React Native, iOS, and Android, run in parallel with ono-mobile-dev-plugin.",
-  "version": "0.6.0",
+  "description": "Figma- and spec/LLD-grounded QA test planning, approval, sync, dev/QA coverage gap analysis, Appium automation generation, and live locator verification for Ono Apps' features across React, React Native, iOS, and Android, run in parallel with ono-mobile-dev-plugin.",
+  "version": "0.7.0",
   "author": {
     "name": "Ono Apps",
     "email": "magen@onoapps.com"
@@ -13,6 +13,11 @@
     "figma": {
       "type": "http",
       "url": "https://mcp.figma.com/mcp"
+    },
+    "appium": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["appium-mcp@latest"]
     }
   }
 }
