@@ -83,6 +83,10 @@ claude --plugin-dir /path/to/ono-plugin-qa
 | `/set-qa-scope` | feature name | Records the feature's required surfaces, devices/runtimes per surface, approved test plan and per-surface exclusions — all QA-entered |
 | `/define-smoke-suite` | surface | Creates/updates the QA-authored smoke suite for one surface (`smoke/<surface>/smoke-suite.md`) |
 | `/record-execution` | feature name, `smoke`\|`functional`, build id, surface | Walks a manual smoke or functional run case by case, persisting PASS/FAIL/BLOCKED/NOT_RUN — functional only after smoke passes (or an explicit, reasoned override) |
+| `/report-bug` | `--from-run=`/`--case=` (a FAIL QA chose to report), or standalone | Creates a bug from a failed execution (already reproduced, with Dev), or an existing standalone bug with no feature/plan/spec/Figma |
+| `/verify-bug` | bug id, build id, surface | Records one reproduction attempt: REPRODUCED → Dev, NOT_REPRODUCIBLE → closed, BLOCKED → retry later |
+| `/retest-bug` | bug id, build id, surface | Re-tests the fix build: PASS on every affected surface closes the bug; FAIL reopens it back to Dev for a new fix build |
+| `/resolve-bug` | bug id, `duplicate`\|`wont_fix` | Closes an open bug by a recorded human decision with a reason |
 
 ## Pipeline
 
@@ -95,6 +99,7 @@ claude --plugin-dir /path/to/ono-plugin-qa
 | 3. Automation | `/generate-automation-scripts` | `automation-test-generation` | `automation-test-writer` |
 | 3. Live verification (optional, as needed) | `/verify-automation-locators` | `appium-live-verification` | `automation-locator-verifier` |
 | 4. Execution (per delivered build) | `/register-build`, `/set-qa-scope`, `/define-smoke-suite`, `/record-execution` | — (helper-driven) | — |
+| 5. Bugs (as needed) | `/report-bug`, `/verify-bug`, `/retest-bug`, `/resolve-bug` | — (helper-driven) | — |
 
 Phase 1 depends on nothing but a Figma link and/or a spec/LLD doc — it can run the moment a feature is designed/specified, in parallel with dev's implementation. A test plan must be approved via `/approve-qa-test-plan` before Phase 2 will run against it; `/sync-qa-test-plan` can be run any time beforehand (or after) to catch up with design/spec changes, and resets approval if it makes a substantive change. Phase 2 depends on both an approved Phase 1 test plan and the dev plugin's `qa-handoff-template.md` output for the same feature, so it only runs once dev has handed off. `/verify-automation-locators` is a separate, optional follow-up to Phase 3 — unlike every other command here, it needs a live simulator/device with the app running, so `/generate-automation-scripts` itself still works with nothing but the two repos, and this step is only run when someone actually has a device up.
 
@@ -138,6 +143,8 @@ One hook is always active while the plugin is installed:
 
 `scripts/qa-ledger.mjs` is the groundwork for tracking QA work after a plan exists: builds delivered to QA, the scope they serve (`feature:<slug>`, a standalone `bug:<id>`, or a `release:<id>`), and every execution result recorded against them. It keeps that state as append-only records under `<qa-repo>/qa-ledger/`, alongside the existing per-feature artifacts, and never rewrites a test plan. The existing planning commands never touch it; the execution commands below are its only users. The contract is in [`docs/qa-ledger-contract.md`](docs/qa-ledger-contract.md).
 
-Execution (Phase 4) runs on top of it, per delivered build: `/register-build`, then `/set-qa-scope` (required surfaces, devices, the approved plan, exclusions), a QA-authored smoke suite per surface (`/define-smoke-suite`), then `/record-execution` — smoke first, once per build and surface; functional execution only after smoke passes or QA records an explicit override with a reason. Every result is PASS / FAIL / BLOCKED / NOT_RUN, append-only; a result recorded against a plan row that `/sync-qa-test-plan` later changed shows as stale. Everything is manual — no automation or device connection is needed. A FAIL is only a failed result; bug handling comes in a later stage.
+Execution (Phase 4) runs on top of it, per delivered build: `/register-build`, then `/set-qa-scope` (required surfaces, devices, the approved plan, exclusions), a QA-authored smoke suite per surface (`/define-smoke-suite`), then `/record-execution` — smoke first, once per build and surface; functional execution only after smoke passes or QA records an explicit override with a reason. Every result is PASS / FAIL / BLOCKED / NOT_RUN, append-only; a result recorded against a plan row that `/sync-qa-test-plan` later changed shows as stale. Everything is manual — no automation or device connection is needed. A FAIL is only a failed result until QA decides to report it.
 
-Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-execution.test.mjs scripts/qa-ledger.mutation.test.mjs`.
+Bugs (Phase 5) use the same ledger. A bug is reported either from a FAIL QA chose to report (`/report-bug --from-run … --case …` — it starts with Dev) or as an existing standalone bug with no feature or plan (it starts `new`, and `/verify-bug` reproduces it on a build). Dev's fix arrives as a build registered with `--fixes bug:<id>`; that claim never closes anything. The fix build passes smoke on each surface first — the same per-build gate as feature execution — and then `/retest-bug` decides: PASS on every affected surface closes it as verified, FAIL reopens it and the next step is a new fix build, not another re-test. Duplicates and won't-fix are explicit human decisions (`/resolve-bug`). Each bug's state is derived from the ledger, and `bugs/<id>/bug.md` is a regenerated, read-only view of it; external trackers are referenced (`external_ref`), never written.
+
+Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-execution.test.mjs scripts/qa-bugs.test.mjs scripts/qa-ledger.mutation.test.mjs`.

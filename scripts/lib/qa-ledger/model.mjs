@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SCHEMA, EXECUTION_TYPES, RESULTS, SCOPE_KINDS, BUG_REF_TYPES, LEDGER_DIR, fail, canonical, hashOk, isStr, isIso, strictObject, uniqueCanon, idOk } from './core.mjs';
 import { executionErrors } from './execution.mjs';
+import { BUG_FIELDS, bugShapeErrors, bugErrors, fixesClaimedOk } from './bugs.mjs';
 
 // ---------- scope context fields ----------
 
@@ -47,6 +48,8 @@ export const FIELDS = {
     ref: 'smoke_override',
     valid: (v) => strictObject(v, ['build_id', 'surface', 'reason']) && idOk(v.build_id) && idOk(v.surface) && isStr(v.reason),
   },
+  // Stage 3 (additive): bug-only fields — severity, assignee, external_ref, evidence, linked_cases.
+  ...BUG_FIELDS,
 };
 
 export const keyOf = (spec, v) => (spec.keyOf ? spec.keyOf(v) : spec.key ? v[spec.key] : canonical(v));
@@ -137,7 +140,8 @@ function shapeErrors(rec, where) {
   if (rec.v !== SCHEMA) return bad(`v must be ${SCHEMA}`);
   switch (rec.kind) {
     case 'build.registered':
-      if (!strictObject(rec, ['v', 'kind', 'build_id', 'version', 'surfaces', 'source', 'related_scopes', 'registered_by', 'registered_at', 'hash'])) return bad('unexpected build fields');
+      if (!strictObject(rec, ['v', 'kind', 'build_id', 'version', 'surfaces', 'source', 'related_scopes', 'registered_by', 'registered_at', 'hash'], ['fixes_claimed'])) return bad('unexpected build fields');
+      if (!fixesClaimedOk(rec.fixes_claimed)) return bad('fixes_claimed must list bug scopes');
       if (!idOk(rec.build_id) || !(rec.version === null || isStr(rec.version)) || !(rec.source === null || isStr(rec.source))) return bad('invalid build identity');
       if (!Array.isArray(rec.surfaces) || rec.surfaces.length === 0 || !rec.surfaces.every(idOk) || !uniqueCanon(rec.surfaces)) return bad('invalid surfaces');
       if (!Array.isArray(rec.related_scopes) || !rec.related_scopes.every(isStr) || !isStr(rec.registered_by) || !isIso(rec.registered_at)) return bad('invalid build metadata');
@@ -173,7 +177,7 @@ function shapeErrors(rec, where) {
       if (!strictObject(rec, ['v', 'seq', 'prev', 'at', 'kind', 'reason', 'hash']) || !isStr(rec.reason)) return bad('invalid run.aborted');
       return [];
     default:
-      return [{ code: 'UNKNOWN_EVENT_KIND', where, message: `unknown record kind "${rec.kind}" — written by a newer helper, or hand-edited` }];
+      return bugShapeErrors(rec, where) ?? [{ code: 'UNKNOWN_EVENT_KIND', where, message: `unknown record kind "${rec.kind}" — written by a newer helper, or hand-edited` }];
   }
 }
 
@@ -332,7 +336,7 @@ export function loadLedger(store) {
     }
   }
   const model = { errors, warnings, builds, scopes, runs, results, corrupt };
-  errors.push(...executionErrors(model));
+  errors.push(...executionErrors(model), ...bugErrors(model));
   return model;
 }
 

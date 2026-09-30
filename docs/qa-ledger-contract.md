@@ -1,6 +1,6 @@
 # QA Ledger Contract
 
-**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke)**
+**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke), 3 (bug lifecycle)**
 Writer: `scripts/qa-ledger.mjs` — the **only** component that writes the ledger.
 Readers: this plugin's later lifecycle stages (execution, bugs, regression, readiness).
 
@@ -23,7 +23,7 @@ It sits **beside** the existing planning artifacts and never replaces them. `tes
   - is not a git repository root;
   - contains `.ono/` (an application repo with Project Knowledge);
   - is this plugin's own repository (`.claude-plugin/plugin.json` named `ono-plugin-qa`).
-- Writes happen only under `<qa-repo>/qa-ledger/`. Every path is built from validated segments (no separators, `.` or `..`). The helper never writes through a symlink anywhere between `qa-ledger/` and the target.
+- Writes happen only under `<qa-repo>/qa-ledger/`, plus one derived Markdown view per reported bug at `<qa-repo>/bugs/<id>/bug.md` (Stage 3). That view is regenerated in full and never read back. Every path is built from validated segments (no separators, `.` or `..`). The helper never writes through a symlink anywhere between `qa-ledger/` and the target.
 - The helper *reads* test plans only inside the QA repo and outside `qa-ledger/`, never through a link that leaves the repo.
 - It never writes to the application repo, Inspector artifacts, Dev Plugin artifacts, or any external system. A value such as a Dev artifact path is stored as a reference string and never opened.
 - It never runs git. The `block-qa-repo-git-writes` hook is unchanged; QA reviews and commits ledger files by hand like every other QA artifact.
@@ -146,7 +146,7 @@ Terminal records:
 - `run.closed {}` needs at least one result; an empty run must be aborted instead.
 - `run.aborted { reason }`.
 
-**Stage 1 enforces structure only:** types, references and terminal state. Stage 2 adds the smoke and functional-execution rules in [Stage 2 — feature execution and smoke](#stage-2--feature-execution-and-smoke). Bug transitions and regression/retest gates belong to later stages.
+**Stage 1 enforces structure only:** types, references and terminal state. Stage 2 adds the smoke and functional-execution rules in [Stage 2 — feature execution and smoke](#stage-2--feature-execution-and-smoke). Stage 3 adds the bug lifecycle in [Stage 3 — bug lifecycle](#stage-3--bug-lifecycle). Regression rules belong to later stages.
 
 ## Append-only guarantees
 
@@ -269,6 +269,107 @@ These are operational views. None of them computes a readiness verdict.
 
 `/register-build`, `/set-qa-scope`, `/define-smoke-suite` and `/record-execution` drive the helper. Each command resolves the QA repo exactly like the existing commands, and never writes the ledger except through the helper.
 
+## Stage 3 — bug lifecycle
+
+A bug **is** its `bug:<id>` scope; there is no second bug store. Stage 3 adds only additive pieces:
+
+- two record kinds, `bug.reported` and `bug.resolved`;
+- an optional `fixes_claimed` field on build records;
+- five bug-only context fields.
+
+The bug's state is **never persisted**. `scripts/lib/qa-ledger/bugs.mjs` replays it from these records plus the Stage 1 `reproduction` and `retest` runs, and the same replay drives the write-time guards, the views and `validate`.
+
+### Records
+
+| Record | Where | Content |
+|---|---|---|
+| `bug.reported` | Bug scope stream, **seq 1** (written together with `scope.created`, exactly once) | `title`, `description`, `steps[]`, `expected`, `actual`, `severity`, `origin` (`{kind: intake}` or `{kind: execution, run_id, result_id, case_key}`), `found_in_build`, `surfaces[]` (affected), `devices[]`, `linked_cases[]`, `related_scopes[]`, `evidence[]`, `external_ref`, `by` |
+| `bug.resolved` | Bug scope stream | `resolution` ∈ `duplicate` \| `wont_fix`, `reason` (required), `reference` (optional; a `bug:` reference must be another existing bug), `by` (the human who decided) |
+| `fixes_claimed` | Optional field on a build record | Bug refs this build claims to fix; set at registration, immutable like the rest of the build |
+
+**Bug-only context fields:**
+
+| Field | Op | Value |
+|---|---|---|
+| `severity` | set | `critical` \| `major` \| `minor` \| `trivial` |
+| `assignee` | set | string \| null |
+| `external_ref` | set | string \| null |
+| `evidence` | add | reference string |
+| `linked_cases` | add | a test-plan or smoke-suite case key that must exist |
+
+Stage 1 fields apply to bug scopes as well: `surfaces` (replaces the affected surfaces), `devices`, `related_scopes`, `capability` (reference only), `cases`.
+
+**Severity** is recorded, never interpreted; readiness decides later what it means.
+
+### The bug-owned case
+
+Every reported bug has the case `bug:<id>#R1`: its reproduction steps and expected result, taken from the report and hashed like a plan row.
+- Reproduction attempts and re-tests execute this case. A FAIL means the bug is present.
+- A standalone bug therefore needs no test plan, feature, spec or Figma.
+- `R1` can't be redeclared through `cases`.
+
+### States
+
+Every state below is derived:
+
+| State | Next action | Reached by |
+|---|---|---|
+| `new` | `qa_verify` | Standalone intake |
+| `verification_blocked` | `qa_verify` | A reproduction run with a BLOCKED outcome |
+| `assigned` | `dev_fix` | Reported from a FAIL (already reproduced), or a REPRODUCED reproduction |
+| `fix_delivered` | `qa_retest` | A build registered with `fixes_claimed` for the bug while Dev owns it |
+| `reopened` | `dev_fix` | A re-test FAIL. The failed fix cycle ends: the next step is a **new** fix build. |
+| `closed_verified` | none | Re-test PASS on **every** affected surface within the current fix cycle |
+| `closed_not_reproducible` | none | A reproduction run with a NOT_REPRODUCIBLE outcome |
+| `closed_duplicate` / `closed_wont_fix` | none | `bug.resolved` |
+
+**Run outcomes** come from the effective results of a closed run:
+- any FAIL → `fail`;
+- else any BLOCKED or NOT_RUN → `blocked`;
+- else `pass`.
+
+`R1` must be among them and may not be NOT_RUN. For reproduction runs, `fail` means REPRODUCED and `pass` means NOT_REPRODUCIBLE.
+
+A later fix claim while one is under test **supersedes** it: the later build becomes the fix under test, the earlier claim is kept with outcome `superseded`, and it can no longer be re-tested.
+
+### Guards (write time; `validate` re-derives them)
+
+| Rule | Refusal |
+|---|---|
+| A bug is reported only from an effective FAIL of a non-aborted smoke, functional or regression run | `NOT_A_FAILURE` / `UNKNOWN_RESULT` / `RUN_ABORTED` |
+| Reproduction only while `new` or `verification_blocked` | `BUG_NOT_AWAITING_VERIFICATION` |
+| A fix claim only while Dev owns the bug (`assigned`, `reopened`, `fix_delivered`), on a build shipping an affected surface | `BUG_NOT_REPRODUCED` / `BUG_CLOSED` / `FIX_SURFACE_MISMATCH` |
+| A re-test only while `fix_delivered`, on the current fix build or a later one; never on a superseded fix build | `BUG_AWAITING_FIX` (after a reopen) / `BUG_NOT_REPRODUCED` / `FIX_CLAIM_SUPERSEDED` / `RETEST_BUILD_BEFORE_FIX` |
+| **A re-test only through the Stage 2 smoke gate** of its exact (build, surface): smoke `passed` on that build, or an active `smoke_overrides` entry on the run's scope. The gate is the same one functional runs use (`requireSmokeGate`); smoke never carries forward from another build. Reproduction before a fix is not gated. | `SMOKE_GATE_CLOSED`; validate: `GATE_NOT_HELD` |
+| A smoke run records only its own suite's cases, so smoke never becomes bug evidence | `UNKNOWN_CASE` |
+| Reproduction and re-test only on an affected surface | `BUG_SURFACE_MISMATCH` |
+| A reproduction or re-test run closes only with its `R1` outcome | `BUG_OUTCOME_REQUIRED` |
+| `duplicate` / `wont_fix` need a reason and a person; closed bugs are final | `MISSING_ARGUMENT` / `BUG_CLOSED` |
+| `verified` is never a manual resolution | `INVALID_VALUE`; validate: `INVALID_RECORD` |
+
+`validate` replays every bug. A transition no helper could have written is reported as `INVALID_TRANSITION`: a hand-written re-test on a failed fix build, a claim on a closed bug, a reproduction after a reproduction.
+
+A fix claim **never** closes a bug; only a QA re-test does.
+
+### Views
+
+| View | Returns |
+|---|---|
+| `view bug --bug` | Everything about one bug: report, current state, next action, resolution, found/fixed/current fix build, pending re-test surfaces, fix claims with outcomes (`pending`/`failed`/`verified`/`superseded`), reproduction and re-test history, links, evidence, and a chronological history |
+| `view bugs [--scope] [--state]` | One summary line per reported bug |
+| `view case-bugs --case` | Every bug linked to a case (`linked`, `origin` or via a result's `bug_refs`) |
+
+`bug render --bug` regenerates `bugs/<id>/bug.md`. Every write that touches a reported bug re-renders it automatically. The file is deterministic, marked as generated, and never read by the helper: editing it changes nothing.
+
+Bug scopes created with plain `scope create` (no report), as used by Stage 1's structural tests, carry no lifecycle and are not listed as bugs.
+
+### Commands (Stage 3)
+
+`/report-bug`, `/verify-bug`, `/retest-bug` and `/resolve-bug`, plus the `--fixes` option on `/register-build`.
+- `bug verify` / `bug retest` write one atomic run: `run.opened`, the `R1` result, and `run.closed`.
+- The generic `run open` / `result add` / `run close` path obeys the same guards.
+- Nothing is written to external trackers; `external_ref` is only stored.
+
 ## Versioning and compatibility
 
 - `qa_ledger_schema: 1`. The helper refuses any other value (`UNSUPPORTED_SCHEMA`); it does not guess at a newer shape.
@@ -298,12 +399,21 @@ view latest-result  --case --surface [--scope]
 view smoke          --build [--surface]                       (Stage 2)
 view execution      --scope [--surface]                       (Stage 2)
 view run-cases      --run                                     (Stage 2)
+view bug            --bug                                     (Stage 3)
+view bugs           [--scope] [--state]                       (Stage 3)
+view case-bugs      --case                                    (Stage 3)
+build add     … [--fixes bug:<id>]…                           (Stage 3)
+bug report    --title --severity --by  (standalone: --step… --expected --actual --surfaces; from execution: --from-run --case)
+bug verify    --bug --build --surface --device --executor --outcome reproduced|not_reproducible|blocked
+bug retest    --bug --build --surface --device --executor --outcome pass|fail|blocked
+bug resolve   --bug --resolution duplicate|wont_fix --reason --by [--reference]
+bug render    --bug
 plan rows     --plan <qa-repo-relative path>        (read-only; needs no ledger)
 suite check   --suite smoke/<surface>/smoke-suite.md (read-only; needs no ledger; Stage 2)
 ```
 
 `QA_LEDGER_NOW=<ISO>` pins the clock. It exists for deterministic tests and must not be set in normal use.
 
-Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior), `node --test scripts/qa-bugs.test.mjs` (Stage 3 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
 
-Implementation: `scripts/qa-ledger.mjs` is the single CLI entry point and the only place the write boundary (`Store`, in `scripts/lib/qa-ledger/store.mjs`) is constructed. The internal modules under `scripts/lib/qa-ledger/` parse, validate and derive; none of them writes to disk.
+Implementation: `scripts/qa-ledger.mjs` is the single CLI entry point and the only place the write boundary (`Store`, in `scripts/lib/qa-ledger/store.mjs`) is constructed. The internal modules under `scripts/lib/qa-ledger/` parse, validate and derive; none of them writes to disk — `store.mjs` is the only module with file writes, including the one derived-view writer.

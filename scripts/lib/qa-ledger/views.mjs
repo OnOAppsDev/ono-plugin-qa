@@ -5,6 +5,7 @@
 import { fail } from './core.mjs';
 import { orderedBuilds, runOrder, scopeBuildIds, requireScope } from './query.mjs';
 import { viewSmoke, viewExecution, viewRunCases } from './execution.mjs';
+import { viewBug, viewBugs, viewCaseBugs } from './bugs.mjs';
 
 function runSummary(run) {
   const h = run.header;
@@ -127,6 +128,12 @@ export function view(root, model, what, o) {
       return viewExecution(root, model, o);
     case 'run-cases':
       return viewRunCases(root, model, o);
+    case 'bug':
+      return viewBug(model, o);
+    case 'bugs':
+      return viewBugs(model, o);
+    case 'case-bugs':
+      return viewCaseBugs(model, o);
     default:
       fail('UNKNOWN_COMMAND', `unknown view "${what}"`);
   }

@@ -5,7 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { LEDGER_DIR, fail } from './core.mjs';
+import { LEDGER_DIR, ID_RE, fail } from './core.mjs';
 
 export function resolveQaRepo(arg) {
   if (!arg) fail('MISSING_ARGUMENT', '--qa-repo <path> is required');
@@ -92,6 +92,30 @@ export class Store {
 
   append(segments, line) {
     fs.appendFileSync(this.p(...segments), line);
+  }
+
+  // The one write outside qa-ledger/: a derived Markdown view at bugs/<id>/bug.md.
+  // It is regenerated in full from the ledger and never read back.
+  writeDerived(segments, content) {
+    if (segments.length !== 3 || segments[0] !== 'bugs' || !ID_RE.test(segments[1]) || segments[2] !== 'bug.md') fail('PATH_OUTSIDE_QA_REPO', `derived views live only at bugs/<id>/bug.md`);
+    let cur = this.root;
+    for (const s of segments) {
+      cur = path.join(cur, s);
+      let st = null;
+      try {
+        st = fs.lstatSync(cur);
+      } catch {
+        continue;
+      }
+      if (st.isSymbolicLink()) fail('SYMLINK_REFUSED', `${path.relative(this.root, cur)} is a symlink — the ledger never follows links`);
+    }
+    for (let i = 1; i < segments.length; i++) {
+      const dir = path.join(this.root, ...segments.slice(0, i));
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+    }
+    const full = path.join(this.root, ...segments);
+    fs.writeFileSync(`${full}.tmp`, content);
+    fs.renameSync(`${full}.tmp`, full);
   }
 
   list(...segments) {

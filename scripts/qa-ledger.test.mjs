@@ -440,7 +440,7 @@ test('14 existing QA flows are untouched: xlsx export is identical and no old fl
 
   // The lifecycle commands added from Stage 2 on use the ledger by design; every
   // pre-existing command, agent, skill and template must not.
-  const LEDGER_WIRED = new Set(['commands/register-build.md', 'commands/set-qa-scope.md', 'commands/define-smoke-suite.md', 'commands/record-execution.md', 'templates/smoke-suite-template.md']);
+  const LEDGER_WIRED = new Set(['commands/register-build.md', 'commands/set-qa-scope.md', 'commands/define-smoke-suite.md', 'commands/record-execution.md', 'templates/smoke-suite-template.md', 'commands/report-bug.md', 'commands/verify-bug.md', 'commands/retest-bug.md', 'commands/resolve-bug.md']);
   for (const dir of ['commands', 'agents', 'skills', 'templates']) {
     for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, dir), { recursive: true })) {
       const p = path.join(PLUGIN_ROOT, dir, f);
@@ -585,6 +585,8 @@ test('17 repeated fix → re-test FAIL → fix → re-test PASS cycles need no s
   w.ok('run', 'close', '--run', repro);
   for (const [build, result] of Object.entries(outcomes)) {
     w.ok('build', 'add', '--id', build, '--surfaces', 'android-tv', '--registered-by', 'dana', '--related-scope', 'bug:BUG-27');
+    // Stage 3 re-tests pass the Stage 2 smoke gate; this structural test records an override (see seeded()).
+    w.ok('scope', 'event', '--scope', 'bug:BUG-27', '--op', 'add', '--field', 'smoke_overrides', '--value', JSON.stringify({ build_id: build, surface: 'android-tv', reason: 'Structural ledger test — smoke is exercised separately' }), '--by', 'dana');
     w.ok('scope', 'event', '--scope', 'bug:BUG-27', '--op', 'add', '--field', 'dev_artifacts', '--value', JSON.stringify({ kind: 'fix_build', ref: build }), '--by', 'dana');
     const run = w.ok('run', 'open', '--type', 'retest', '--scope', 'bug:BUG-27', '--build', build, '--surface', 'android-tv', '--device', 'Shield', '--executor', 'dana').run_id;
     const id = w.ok('result', 'add', '--run', run, '--case', 'bug:BUG-27#R1', '--result', result).result_id;

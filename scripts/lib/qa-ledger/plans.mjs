@@ -81,6 +81,13 @@ export function readPlan(root, rel) {
   };
 }
 
+// The normalized cells of one row of a plan or suite (read-only), or null.
+export function rowCells(root, rel, id) {
+  const { abs } = resolveQaFile(root, rel);
+  const row = parseTableRows(fs.readFileSync(abs, 'utf8')).find((r) => r.id === id);
+  return row ? row.cells : null;
+}
+
 export const smokeSuitePath = (surface) => `${SMOKE_DIR}/${surface}/${SMOKE_FILE}`;
 export const isSmokePath = (rel) => rel.startsWith(`${SMOKE_DIR}/`);
 

@@ -28,6 +28,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Internal structure:** the helper is split into internal modules under `scripts/lib/qa-ledger/`. `qa-ledger.mjs` remains the single entry point and the only constructor of the write boundary.
   - **Tests:** `scripts/qa-execution.test.mjs` (25), and mutation tests extended to cover the smoke gates.
   - **Unchanged:** the existing planning commands, test-plan format and xlsx export.
+- Bug lifecycle (lifecycle Stage 3), on the same ledger, with no schema change and no second bug store:
+  - **Model:** a bug is its `bug:<id>` scope, with additive `bug.reported` / `bug.resolved` records, an optional `fixes_claimed` field on builds, and bug-only context fields (`severity`, `assignee`, `external_ref`, `evidence`, `linked_cases`).
+  - **Derived state:** `new`, `verification_blocked`, `assigned`, `fix_delivered`, `reopened`, `closed_verified`, `closed_not_reproducible`, `closed_duplicate`, `closed_wont_fix`, with the next action (`qa_verify` / `dev_fix` / `qa_retest` / none). It is replayed from the reproduction and re-test runs and fix claims, never stored.
+  - **Commands:**
+    - `/report-bug` — from a FAIL QA chose to report (inherits run, case, build, surface, device and feature; starts with Dev) or as a standalone bug with no feature, plan, spec or Figma (starts `new`).
+    - `/verify-bug` — REPRODUCED / NOT_REPRODUCIBLE / BLOCKED on a specific build and surface.
+    - `/retest-bug` — only after the fix build passed smoke on that surface (the same Stage 2 per-build gate, or its explicit override). PASS closes only when every affected surface passed on the fix build; FAIL reopens it back to Dev and requires a new fix build; BLOCKED changes nothing. A later fix claim supersedes a pending one, and the superseded build can no longer be re-tested.
+    - `/resolve-bug` — duplicate / wont_fix, with a person and a reason.
+    - `/register-build --fixes` — a fix claim that never closes a bug by itself.
+  - **Bug-owned case:** each bug has its repro / re-test case `bug:<id>#R1`, so standalone bugs need no plan. Links are many-to-many between bugs and test cases.
+  - **Views:** `view bug`, `view bugs`, `view case-bugs`, and a regenerated, never-authoritative `bugs/<id>/bug.md`.
+  - **Validation:** `validate` replays every transition (`INVALID_TRANSITION`).
+  - **No external writes:** trackers are only referenced (`external_ref`).
+  - **Smoke runs:** they record only their own suite's cases, so smoke never becomes bug evidence.
+  - **Tests:** `scripts/qa-bugs.test.mjs` (39), and mutation tests extended to the bug transitions, the close/reopen guards, the re-test smoke gate and fix-claim supersession.
+  - **Unchanged:** feature execution and smoke behavior.
 
 ## [0.7.0] - 2026-08-25
 

@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.join('lib', 'qa-ledger');
 const SOURCES = ['qa-ledger.mjs', ...fs.readdirSync(path.join(HERE, LIB)).map((f) => path.join(LIB, f))];
-const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs') };
+const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs') };
 
 // [invariant, exact source text, replacement, tests that must catch it ({ suite: [test-name prefixes] })]
 const MUTANTS = [
@@ -32,7 +32,7 @@ const MUTANTS = [
   ['a correction supersedes the same case only', "if (prior.case_key !== o.case) fail('SUPERSEDE_CASE_MISMATCH'", "if (false) fail('SUPERSEDE_CASE_MISMATCH'", { s1: ['12'] }],
   ['a run references a registered build', "if (!build) fail('UNKNOWN_BUILD', `build ${o.build} is not registered`); // invariant:run-build-exists", "if (false) fail('UNKNOWN_BUILD', ''); // invariant:run-build-exists", { s1: ['05'] }],
   ['retest/reproduction runs reference a bug', "if (BUG_REF_TYPES.includes(o.type) && !bugRef) fail('BUG_REF_REQUIRED'", "if (false) fail('BUG_REF_REQUIRED'", { s1: ['05'] }],
-  ['writes only append', 'fs.appendFileSync(this.p(...segments), line);', 'fs.writeFileSync(this.p(...segments), line);', { s1: ['08', '09'], s2: ['S2-13'] }],
+  ['writes only append', 'fs.appendFileSync(this.p(...segments), line);', 'fs.writeFileSync(this.p(...segments), line);', { s1: ['08', '09'], s2: ['S2-13'], s3: ['S3-28'] }],
   ['ledger paths never follow symlinks', "if (st.isSymbolicLink()) fail('SYMLINK_REFUSED'", "if (false) fail('SYMLINK_REFUSED'", { s1: ['16'] }],
   [
     'plan reads stay inside the QA repo',
@@ -49,7 +49,7 @@ const MUTANTS = [
   ['aborted runs never count as the latest result', "h.run_state === 'closed' && h.superseded_by === null", "h.run_state !== 'open' && h.superseded_by === null", { s1: ['20'] }],
 
   // ---- Stage 2: smoke gate and functional execution ----
-  ['functional runs wait for the smoke gate', 'if (!gate.open) {', 'if (false) {', { s2: ['S2-06', 'S2-07', 'S2-08', 'S2-10', 'S2-16'] }],
+  ['functional runs wait for the smoke gate', 'if (!gate.open) {', 'if (false) {', { s2: ['S2-06', 'S2-07', 'S2-08', 'S2-10', 'S2-16'], s3: ['S3-29', 'S3-31'] }],
   ['a smoke FAIL rejects the build', "if (counts.fail) return 'failed';", '', { s2: ['S2-07'] }],
   ['a smoke BLOCKED rejects the build', "if (counts.blocked) return 'blocked';", '', { s2: ['S2-08'] }],
   ['a smoke with NOT_RUN cases is not a pass', "if (counts.not_run) return 'incomplete';", '', { s2: ['S2-08'] }],
@@ -66,6 +66,28 @@ const MUTANTS = [
   ['a changed plan row makes evidence stale', "if (latest.case_ref.row_hash !== row.row_hash) return 'stale';", '', { s2: ['S2-14'] }],
   ['validate re-derives the gate for every functional run', "if (!gateFor(model, h.scope, h.build_id, h.surface, h.at).open) errors.push", 'if (false) errors.push', { s2: ['S2-24'] }],
   ['validate refuses a second closed smoke run', "if (closedSmoke.has(key)) errors.push", 'if (false) errors.push', { s2: ['S2-24'] }],
+  // ---- Stage 3: bug state transitions and close/reopen guards ----
+  ['a bug can only be reported from a FAIL', "if (result.result !== 'fail') fail('NOT_A_FAILURE'", "if (false) fail('NOT_A_FAILURE'", { s3: ['S3-03'] }],
+  ['reproduction is only for a bug not yet reproduced', "if (!AWAITING_VERIFICATION.includes(bug.state)) fail('BUG_NOT_AWAITING_VERIFICATION'", "if (false) fail('BUG_NOT_AWAITING_VERIFICATION'", { s3: ['S3-07', 'S3-27'] }],
+  ['a fix claim needs a reproduced bug', "if (AWAITING_VERIFICATION.includes(bug.state)) fail('BUG_NOT_REPRODUCED', `${bug.bug} is ${bug.state} — QA must reproduce", "if (false) fail('BUG_NOT_REPRODUCED', `${bug.bug} is ${bug.state} — QA must reproduce", { s3: ['S3-10'] }],
+  ['a closed bug takes no fix claim', "if (CLOSED.includes(bug.state)) fail('BUG_CLOSED', `${bug.bug} is ${bug.state} — a closed bug takes no fix claim`);", '', { s3: ['S3-08'] }],
+  ['a fix claim never closes a bug', "      state = 'fix_delivered';", "      state = 'closed_verified';", { s3: ['S3-11'] }],
+  ['a re-test waits for a fix after a reopen', "if (DEV_OWNED.includes(bug.state)) fail('BUG_AWAITING_FIX'", "if (false) fail('BUG_AWAITING_FIX'", { s3: ['S3-14', 'S3-15', 'S3-20'] }],
+  ['a re-test never runs on a build older than the fix', "if (idx.get(buildId) < idx.get(bug.current_fix_build)) fail('RETEST_BUILD_BEFORE_FIX'", "if (false) fail('RETEST_BUILD_BEFORE_FIX'", { s3: ['S3-15'] }],
+  ['a re-test FAIL reopens the bug', "          state = 'reopened';", '', { s3: ['S3-13', 'S3-14'] }],
+  ['a reopen ends the failed fix cycle', "cycle.claim.outcome = 'failed';\n          cycle = null;", "cycle.claim.outcome = 'failed';", { s3: ['S3-14'] }],
+  ['a re-test PASS closes only when every affected surface passed', 'if (surfaces.every((s) => cycle.passed.has(s))) {', 'if (true) {', { s3: ['S3-12'] }],
+  ['a BLOCKED re-test never counts as a pass', "if (results.includes('blocked') || results.includes('not_run')) return 'blocked';", '', { s3: ['S3-12'] }],
+  ['a bug run needs its scenario outcome to close', "if (runOutcome(run, h.bug_ref) === null) fail('BUG_OUTCOME_REQUIRED'", "if (false) fail('BUG_OUTCOME_REQUIRED'", { s3: ['S3-27'] }],
+  ['verified is never a manual resolution', 'if (!RESOLUTIONS.includes(rec.resolution)) return bad(', 'if (false) return bad(', { s3: ['S3-20'] }],
+  ['a closed bug cannot be resolved again', "if (CLOSED.includes(bug.state)) fail('BUG_CLOSED', `${bug.bug} is ${bug.state}`); // invariant:resolve-open-only", '// resolve guard removed', { s3: ['S3-21'] }],
+  ['bug re-tests wait for the smoke gate of their exact build', "if (o.type === 'retest') requireSmokeGate(", "if (false) requireSmokeGate(", { s3: ['S3-29', 'S3-30', 'S3-31', 'S3-32', 'S3-35', 'S3-38'] }],
+  ['validate re-derives the smoke gate for every re-test', "if (h.execution_type === 'retest' && !gateFor(", "if (false && !gateFor(", { s3: ['S3-37'] }],
+  ['a later fix claim becomes the fix under test', 'cycle = { claim, idx: idx.get(claim.build_id), passed: new Set() };', 'cycle ??= { claim, idx: idx.get(claim.build_id), passed: new Set() };', { s3: ['S3-38'] }],
+  ['a superseded fix build cannot be re-tested', "if (superseded) fail('FIX_CLAIM_SUPERSEDED'", "if (false) fail('FIX_CLAIM_SUPERSEDED'", { s3: ['S3-38'] }],
+  ['a smoke run records only its own suite cases', "if (h.execution_type === 'smoke' && !caseKey.startsWith(", "if (false && !caseKey.startsWith(", { s3: ['S3-39'] }],
+  ['smoke run-cases never offer the bug scenario', "h.execution_type === 'smoke' ? [] : ", '', { s3: ['S3-39', 'S3-17'] }],
+  ['validate replays every bug transition', 'errors.push(...deriveBug(model, scope.ref).violations);', '', { s3: ['S3-26'] }],
   ['execution views count only closed functional runs', "r.header.execution_type === 'functional' && r.state === 'closed'", "r.header.execution_type === 'functional'", { s2: ['S2-11', 'S2-14'] }],
 ];
 

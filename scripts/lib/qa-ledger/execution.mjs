@@ -7,6 +7,7 @@
 import { fail } from './core.mjs';
 import { readPlan, readSmokeSuite, smokeSuitePath, isSmokePath } from './plans.mjs';
 import { orderedBuilds, runOrder, scopeBuildIds, requireScope } from './query.mjs';
+import { bugCase, bugCaseKey } from './bugs.mjs';
 
 // ---------- smoke ----------
 
@@ -63,6 +64,18 @@ export function gateFor(model, scopeRef, buildId, surface, at = null) {
 
 // ---------- write-time rules ----------
 
+// The Stage 2 smoke gate for deeper QA on one (build, surface): smoke passed on that
+// exact build, or the run's scope holds an explicit override. Functional runs and bug
+// re-tests both go through here — there is one gate, never a per-stage copy.
+export function requireSmokeGate(model, scopeRef, buildId, surface) {
+  const gate = gateFor(model, scopeRef, buildId, surface);
+  if (!gate.open) {
+    const smoke = smokeStatus(model, buildId, surface).status;
+    fail('SMOKE_GATE_CLOSED', `smoke on build ${buildId} / ${surface} is ${smoke} — deeper QA waits for a smoke PASS on this build or an explicit override`, { smoke_status: smoke, build_id: buildId, surface });
+  }
+  return gate;
+}
+
 function resolveDevice(scope, surface, device, osRuntime) {
   const declared = (scope.context.devices ?? []).filter((d) => d.surface === surface && d.device === device);
   const matching = osRuntime ? declared.filter((d) => d.os_runtime === undefined || d.os_runtime === osRuntime) : declared;
@@ -103,16 +116,13 @@ export function checkRunOpen(root, model, scope, build, surface, opts, planRefs)
   }
   if (!(sc.context.surfaces ?? []).includes(surface)) fail('SURFACE_NOT_IN_SCOPE', `${surface} is not a required surface of ${scope.ref} — set it with /set-qa-scope`);
   const osRuntime = resolveDevice(sc, surface, opts.device, opts['os-runtime']);
-  const gate = gateFor(model, scope.ref, build.build_id, surface);
-  if (!gate.open) {
-    const smoke = smokeStatus(model, build.build_id, surface).status;
-    fail('SMOKE_GATE_CLOSED', `smoke on build ${build.build_id} / ${surface} is ${smoke} — functional QA waits for a smoke PASS or an explicit override`, { smoke_status: smoke, build_id: build.build_id, surface });
-  }
+  requireSmokeGate(model, scope.ref, build.build_id, surface);
   return osRuntime;
 }
 
 export function checkResultAdd(model, run, caseKey) {
   const h = run.header;
+  if (h.execution_type === 'smoke' && !caseKey.startsWith(`smoke/${h.surface}/`)) fail('UNKNOWN_CASE', `a smoke run records only its suite's cases (smoke/${h.surface}/S<n>), not ${caseKey}`);
   if (h.execution_type !== 'functional') return;
   const scope = model.scopes.get(h.scope);
   const excluded = (scope.context.exclusions ?? []).find((x) => x.case_key === caseKey && x.surface === h.surface);
@@ -166,6 +176,9 @@ export function executionErrors(model) {
     if (h.execution_type === 'functional') {
       if (!h.scope.startsWith('feature:') || !h.plan_refs.length) errors.push({ code: 'INVALID_RECORD', where: h.run_id, message: 'a functional run needs a feature scope and a plan' });
       if (!gateFor(model, h.scope, h.build_id, h.surface, h.at).open) errors.push({ code: 'GATE_NOT_HELD', where: h.run_id, message: `opened with the smoke gate closed on ${h.build_id} / ${h.surface}` });
+    }
+    if (h.execution_type === 'retest' && !gateFor(model, h.scope, h.build_id, h.surface, h.at).open) {
+      errors.push({ code: 'GATE_NOT_HELD', where: h.run_id, message: `re-test opened with the smoke gate closed on ${h.build_id} / ${h.surface}` });
     }
   }
   return errors;
@@ -295,7 +308,8 @@ export function viewRunCases(root, model, o) {
   let rows = [];
   if (h.execution_type === 'smoke') rows = readSmokeSuite(root, h.plan_refs[0].plan).rows;
   else for (const p of h.plan_refs) rows.push(...readPlan(root, p.plan).rows);
-  for (const ref of [...new Set([h.scope, h.bug_ref].filter(Boolean))]) {
+  for (const ref of h.execution_type === 'smoke' ? [] : [...new Set([h.scope, h.bug_ref].filter(Boolean))]) {
+    if (bugCase(model.scopes.get(ref))) rows.push({ case_key: bugCaseKey(ref), section: 'Bug scenario' });
     for (const c of model.scopes.get(ref)?.context.cases ?? []) rows.push({ case_key: `${ref}#${c.id}`, section: 'Scope cases' });
   }
   if (h.execution_type === 'functional') {
