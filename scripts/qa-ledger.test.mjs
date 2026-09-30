@@ -36,6 +36,9 @@ function workspace() {
   fs.writeFileSync(path.join(code, 'App.tsx'), 'export default null;\n');
   fs.mkdirSync(path.join(qa, 'checkout'));
   fs.copyFileSync(FIXTURE_PLAN, path.join(qa, 'checkout', 'test-plan.md'));
+  // Stage 2: smoke runs execute a QA-authored suite for their surface.
+  fs.mkdirSync(path.join(qa, 'smoke', 'android'), { recursive: true });
+  fs.copyFileSync(path.join(HERE, 'fixtures', 'qa-ledger', 'smoke', 'android', 'smoke-suite.md'), path.join(qa, 'smoke', 'android', 'smoke-suite.md'));
   let tick = 0;
   // Deterministic, strictly increasing clock for every helper call.
   const now = () => new Date(Date.UTC(2026, 8, 1, 9, 0, 0) + tick++ * 1000).toISOString();
@@ -114,19 +117,27 @@ function writeStream(file, records) {
 }
 
 // A ready-made ledger: feature:checkout with its plan, and builds 103–105 on android.
+// Stage 2 gates functional runs (declared surface and device, smoke PASS or an explicit
+// override); these structural tests record an override per build so they can keep
+// exercising functional runs without running smoke first — the gate itself is tested
+// in qa-execution.test.mjs.
 function seeded() {
   const w = workspace();
   w.ok('init');
   w.ok('scope', 'create', '--scope', 'feature:checkout', '--created-by', 'dana');
   w.ok('scope', 'event', '--scope', 'feature:checkout', '--op', 'add', '--field', 'plans', '--value', '"checkout/test-plan.md"', '--by', 'dana');
+  w.ok('scope', 'event', '--scope', 'feature:checkout', '--op', 'set', '--field', 'surfaces', '--value', '["android","ios"]', '--by', 'dana');
+  w.ok('scope', 'event', '--scope', 'feature:checkout', '--op', 'set', '--field', 'devices', '--value', '[{"surface":"android","device":"Pixel 8","os_runtime":"Android 15"}]', '--by', 'dana');
   for (const id of ['103', '104', '105']) {
     w.ok('build', 'add', '--id', id, '--surfaces', 'android,ios', '--version', `2.4.0-${id}`, '--registered-by', 'dana', '--related-scope', 'feature:checkout');
+    w.ok('scope', 'event', '--scope', 'feature:checkout', '--op', 'add', '--field', 'smoke_overrides', '--value', JSON.stringify({ build_id: id, surface: 'android', reason: 'Structural ledger test — smoke is exercised separately' }), '--by', 'dana');
   }
   return w;
 }
 
 function openRun(w, type, build, extra = []) {
-  return w.ok('run', 'open', '--type', type, '--scope', 'feature:checkout', '--build', build, '--surface', 'android', '--device', 'Pixel 8', '--os-runtime', 'Android 15', '--executor', 'dana', '--plan', 'checkout/test-plan.md', ...extra).run_id;
+  const plan = type === 'smoke' ? 'smoke/android/smoke-suite.md' : 'checkout/test-plan.md';
+  return w.ok('run', 'open', '--type', type, '--scope', 'feature:checkout', '--build', build, '--surface', 'android', '--device', 'Pixel 8', '--os-runtime', 'Android 15', '--executor', 'dana', '--plan', plan, ...extra).run_id;
 }
 
 // ---------- 1. feature scope without any bug ----------
@@ -148,6 +159,7 @@ test('01 a feature scope exists, is executed, and is valid with zero bugs', () =
 test('02 a standalone bug scope needs no feature and no test plan', () => {
   const w = workspace();
   fs.rmSync(path.join(w.qa, 'checkout'), { recursive: true });
+  fs.rmSync(path.join(w.qa, 'smoke'), { recursive: true });
   w.ok('init');
   w.ok('scope', 'create', '--scope', 'bug:BUG-27', '--created-by', 'dana', '--title', 'Player freezes after resume');
   w.ok('scope', 'event', '--scope', 'bug:BUG-27', '--op', 'set', '--field', 'surfaces', '--value', '["android-tv"]', '--by', 'dana');
@@ -263,7 +275,7 @@ test('08 every write only appends to its stream', () => {
   }
   const context = w.ok('view', 'scope', '--scope', 'feature:checkout').scope;
   assert.deepEqual(context.context.surfaces, ['android', 'ios'], 'the latest set wins in the derived view');
-  assert.equal(readStream(scopeFile).filter((e) => e.field === 'surfaces').length, 2, 'both set events are kept');
+  assert.equal(readStream(scopeFile).filter((e) => e.field === 'surfaces').length, 3, 'every set event is kept (one from seeded, two here)');
 });
 
 test('09 a later PASS on build 104 never overwrites the FAIL on build 103', () => {
@@ -426,10 +438,13 @@ test('14 existing QA flows are untouched: xlsx export is identical and no old fl
   // Recorded from the unmodified builder at 8ff033c.
   assert.equal(xlsxEntryDigest(out), 'c5357b43b5ad24f3f2547a70c87a71c3bbe39dab48b040859fb932d004620bf6');
 
+  // The lifecycle commands added from Stage 2 on use the ledger by design; every
+  // pre-existing command, agent, skill and template must not.
+  const LEDGER_WIRED = new Set(['commands/register-build.md', 'commands/set-qa-scope.md', 'commands/define-smoke-suite.md', 'commands/record-execution.md', 'templates/smoke-suite-template.md']);
   for (const dir of ['commands', 'agents', 'skills', 'templates']) {
     for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, dir), { recursive: true })) {
       const p = path.join(PLUGIN_ROOT, dir, f);
-      if (!fs.statSync(p).isFile()) continue;
+      if (!fs.statSync(p).isFile() || LEDGER_WIRED.has(`${dir}/${f}`)) continue;
       assert.ok(!fs.readFileSync(p, 'utf8').includes('qa-ledger'), `${dir}/${f} must not be wired to the ledger in Stage 1`);
     }
   }

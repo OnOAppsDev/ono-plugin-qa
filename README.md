@@ -79,6 +79,10 @@ claude --plugin-dir /path/to/ono-plugin-qa
 | `/check-qa-coverage` | feature name, dev handoff path (optional), `--code-repo=`/`--qa-repo=` (optional overrides) | Compares an **approved** QA test plan against dev's completed QA handoff notes and reports coverage gaps |
 | `/generate-automation-scripts` | feature name, `--code-repo=`/`--qa-repo=` (optional overrides) | Generates Appium (WebdriverIO) automation scripts from an **approved** test plan's test cases |
 | `/verify-automation-locators` | feature name, `--qa-repo=` (optional override) | Replays a generated spec's locators against a live simulator/device via the `appium` MCP server, no full test-run required |
+| `/register-build` | feature name, build id, `--surfaces=`, `--version=`/`--source=` (optional) | Registers a build delivered to QA in the QA ledger — immutable, one record per build |
+| `/set-qa-scope` | feature name | Records the feature's required surfaces, devices/runtimes per surface, approved test plan and per-surface exclusions — all QA-entered |
+| `/define-smoke-suite` | surface | Creates/updates the QA-authored smoke suite for one surface (`smoke/<surface>/smoke-suite.md`) |
+| `/record-execution` | feature name, `smoke`\|`functional`, build id, surface | Walks a manual smoke or functional run case by case, persisting PASS/FAIL/BLOCKED/NOT_RUN — functional only after smoke passes (or an explicit, reasoned override) |
 
 ## Pipeline
 
@@ -90,6 +94,7 @@ claude --plugin-dir /path/to/ono-plugin-qa
 | 2. Coverage check | `/check-qa-coverage` | `qa-coverage-analysis` | `qa-coverage-reviewer` |
 | 3. Automation | `/generate-automation-scripts` | `automation-test-generation` | `automation-test-writer` |
 | 3. Live verification (optional, as needed) | `/verify-automation-locators` | `appium-live-verification` | `automation-locator-verifier` |
+| 4. Execution (per delivered build) | `/register-build`, `/set-qa-scope`, `/define-smoke-suite`, `/record-execution` | — (helper-driven) | — |
 
 Phase 1 depends on nothing but a Figma link and/or a spec/LLD doc — it can run the moment a feature is designed/specified, in parallel with dev's implementation. A test plan must be approved via `/approve-qa-test-plan` before Phase 2 will run against it; `/sync-qa-test-plan` can be run any time beforehand (or after) to catch up with design/spec changes, and resets approval if it makes a substantive change. Phase 2 depends on both an approved Phase 1 test plan and the dev plugin's `qa-handoff-template.md` output for the same feature, so it only runs once dev has handed off. `/verify-automation-locators` is a separate, optional follow-up to Phase 3 — unlike every other command here, it needs a live simulator/device with the app running, so `/generate-automation-scripts` itself still works with nothing but the two repos, and this step is only run when someone actually has a device up.
 
@@ -129,8 +134,10 @@ One hook is always active while the plugin is installed:
 | `docs/` | `qa-ledger-contract.md`, `qa-readiness-contract.md` — lifecycle contracts |
 | `hooks/` | `block-qa-repo-git-writes` |
 
-## QA ledger (foundation)
+## QA ledger and execution
 
-`scripts/qa-ledger.mjs` is the groundwork for tracking QA work after a plan exists: builds delivered to QA, the scope they serve (`feature:<slug>`, a standalone `bug:<id>`, or a `release:<id>`), and every execution result recorded against them. It keeps that state as append-only records under `<qa-repo>/qa-ledger/`, alongside the existing per-feature artifacts, and never rewrites a test plan. No command uses it yet — the user-facing lifecycle commands arrive in later stages. The contract is in [`docs/qa-ledger-contract.md`](docs/qa-ledger-contract.md).
+`scripts/qa-ledger.mjs` is the groundwork for tracking QA work after a plan exists: builds delivered to QA, the scope they serve (`feature:<slug>`, a standalone `bug:<id>`, or a `release:<id>`), and every execution result recorded against them. It keeps that state as append-only records under `<qa-repo>/qa-ledger/`, alongside the existing per-feature artifacts, and never rewrites a test plan. The existing planning commands never touch it; the execution commands below are its only users. The contract is in [`docs/qa-ledger-contract.md`](docs/qa-ledger-contract.md).
 
-Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-ledger.mutation.test.mjs`.
+Execution (Phase 4) runs on top of it, per delivered build: `/register-build`, then `/set-qa-scope` (required surfaces, devices, the approved plan, exclusions), a QA-authored smoke suite per surface (`/define-smoke-suite`), then `/record-execution` — smoke first, once per build and surface; functional execution only after smoke passes or QA records an explicit override with a reason. Every result is PASS / FAIL / BLOCKED / NOT_RUN, append-only; a result recorded against a plan row that `/sync-qa-test-plan` later changed shows as stale. Everything is manual — no automation or device connection is needed. A FAIL is only a failed result; bug handling comes in a later stage.
+
+Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-execution.test.mjs scripts/qa-ledger.mutation.test.mjs`.

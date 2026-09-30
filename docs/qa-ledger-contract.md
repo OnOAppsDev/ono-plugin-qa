@@ -1,6 +1,6 @@
 # QA Ledger Contract
 
-**Schema version: 1** · **Stage: 1 (foundation)**
+**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke)**
 Writer: `scripts/qa-ledger.mjs` — the **only** component that writes the ledger.
 Readers: this plugin's later lifecycle stages (execution, bugs, regression, readiness).
 
@@ -146,7 +146,7 @@ Terminal records:
 - `run.closed {}` needs at least one result; an empty run must be aborted instead.
 - `run.aborted { reason }`.
 
-**Stage 1 enforces structure only:** types, references and terminal state. Workflow rules such as "smoke once per build", smoke gates and bug transitions belong to later stages.
+**Stage 1 enforces structure only:** types, references and terminal state. Stage 2 adds the smoke and functional-execution rules in [Stage 2 — feature execution and smoke](#stage-2--feature-execution-and-smoke). Bug transitions and regression/retest gates belong to later stages.
 
 ## Append-only guarantees
 
@@ -186,13 +186,96 @@ Views are withheld (`CORRUPT_LEDGER`) while the ledger has validation errors, so
 - The row hash is pinned into the result's `case_ref`. A later plan edit (e.g. `/sync-qa-test-plan`) changes the current row hash, so later stages can tell that a recorded result predates the edit. History stays valid either way.
 - Existing plans are never migrated or rewritten.
 
+## Stage 2 — feature execution and smoke
+
+Stage 2 adds **no new record kind and no schema change**. It uses the Stage-1 records, plus two additive context fields and workflow rules the helper enforces when a run is opened or closed. The rules live in `scripts/lib/qa-ledger/execution.mjs`.
+
+### Additive context fields
+
+| Field | Op | Value | Rules |
+|---|---|---|---|
+| `exclusions` | add | `{ case_key, surface, reason }`, keyed `<case_key>@<surface>` | `feature` scopes only. The surface must be one of the scope's `surfaces`, and the case must be a row of a plan attached to the scope. Retract by `"<case_key>@<surface>"`. |
+| `smoke_overrides` | add | `{ build_id, surface, reason }`, keyed `<build_id>@<surface>` | The build must exist and ship the surface. `reason` is required and non-empty. The override belongs to **one scope** only. Retract by `"<build_id>@<surface>"`. |
+
+`surfaces` (Stage 1) is the list of **required** surfaces; a surface not in it is not required. `devices` (Stage 1) declares the devices and runtimes per surface.
+
+### Smoke suites
+
+- A smoke suite is QA-authored, product-level and per surface, at `<qa-repo>/smoke/<surface>/smoke-suite.md` (`templates/smoke-suite-template.md`).
+- Its frontmatter `surface` must equal the folder name.
+- Its rows are `| S<n> | source | steps | expected result |`, where `source` is `QA-authored` or `<plan-folder>/<case-id>` for a row copied from an approved plan case.
+- IDs are never renumbered or reused; removed IDs are listed under `## Retired IDs`.
+- Suite cases use the Stage-1 plan-row mechanism unchanged. The case key is `smoke/<surface>/S<n>`, and each result pins the suite row's `row_hash`.
+- `suite check --suite <path>` reports two kinds of error:
+  - **structural:** `SURFACE_MISMATCH`, `NO_CASES`, `INVALID_CASE_ID`, `DUPLICATE_CASE_ID`, `RETIRED_ID_REUSED`. These make a suite unusable for a smoke run.
+  - **source:** `UNKNOWN_SOURCE`, `SOURCE_NOT_APPROVED`, `INVALID_SOURCE`. These only break traceability.
+- The ledger never creates a suite.
+
+### Smoke rules
+
+| Rule | Enforced as |
+|---|---|
+| A smoke run executes exactly `smoke/<surface>/smoke-suite.md` for its own surface | `SMOKE_SUITE_REQUIRED` / `INVALID_SMOKE_SUITE` |
+| At most one open smoke run per (build, surface) | `SMOKE_IN_PROGRESS` |
+| At most one **closed** smoke run per (build, surface), ever. A rejected build needs a new build, never a second smoke. | `SMOKE_ALREADY_RECORDED`; validate: `DUPLICATE_SMOKE` |
+| A smoke run closes only once every suite case has a result (NOT_RUN counts) | `SMOKE_INCOMPLETE` |
+| Aborted smoke runs are void and don't use up the build's smoke | — |
+
+**Smoke status** of (build, surface) is derived from the one closed smoke run:
+- any FAIL → `failed`;
+- else any BLOCKED → `blocked`;
+- else any NOT_RUN → `incomplete`;
+- else `passed`.
+
+Without a closed smoke run, the status is `in_progress` (a smoke run is open) or `not_started`. Smoke is build-level: it is shared by every scope that uses the build.
+
+### Functional rules
+
+A `functional` run requires all of the following:
+
+| Requirement | Refusal |
+|---|---|
+| A `feature` scope | `FUNCTIONAL_REQUIRES_FEATURE` |
+| At least one `--plan` | `PLAN_REQUIRED` |
+| Every plan attached to the scope (`plans`) | `PLAN_NOT_IN_SCOPE` |
+| Every plan `status: approved`, read from the plan's frontmatter | `PLAN_NOT_APPROVED` |
+| No smoke suite among the plans (true for every non-smoke run) | `INVALID_VALUE` |
+| The surface is one of the scope's required `surfaces` | `SURFACE_NOT_IN_SCOPE` |
+| The device (and runtime, if given) is declared for that surface | `DEVICE_NOT_IN_SCOPE` / `AMBIGUOUS_DEVICE`. The declared runtime is recorded when the run omits one. |
+| **The smoke gate is open** for (scope, build, surface): smoke `passed`, or the scope holds an active `smoke_overrides` entry | `SMOKE_GATE_CLOSED`, with `details.smoke_status` |
+
+- Recording a result for a case excluded on the run's surface is refused (`CASE_EXCLUDED`).
+- A FAIL is only a result: nothing is created from it.
+- `validate` re-derives the gate as of each functional run's open time, so a hand-written run that bypassed it is reported as `GATE_NOT_HELD`.
+- Smoke runs may use any device, because smoke is product-level. A device declared by the run's scope lends its runtime when that runtime is unambiguous.
+
+### Stale evidence
+
+A case's current evidence on a surface is its latest effective result from **closed functional** runs of the scope on that surface.
+- **Stale:** if that result's pinned `row_hash` differs from the plan row's current hash (e.g. after `/sync-qa-test-plan` reworded the row), the case is `stale`. The result stays in history and is shown, but it is not current evidence. A new run against the updated row makes the case current again.
+- **Build currency:** reported only (`on_latest_build`), never judged.
+
+### Stage 2 views
+
+| View | Returns |
+|---|---|
+| `view smoke --build [--surface]` | Per surface: smoke status, the deciding run, counts, whether the gate opens by smoke (`gate_open`), active overrides per scope, and full smoke-run history |
+| `view execution --scope [--surface]` | Per surface (required surfaces first, then any other surface the scope ran on): the scope's builds with their smoke status, latest build, smoke and gate on the latest build, device coverage (declared plus undeclared-but-used), and every plan case. Each case shows its status (`pass` / `fail` / `blocked` / `not_run` / `stale` / `pending` / `excluded`), latest result, current row hash and `on_latest_build`. Also includes a summary with the `pending` and `stale` lists. |
+| `view run-cases --run` | The run's cases in fixed order (suite rows, or plan rows minus exclusions), each with this run's effective result, plus `remaining`. This is what `/record-execution` walks. |
+
+These are operational views. None of them computes a readiness verdict.
+
+### User-facing commands (Stage 2)
+
+`/register-build`, `/set-qa-scope`, `/define-smoke-suite` and `/record-execution` drive the helper. Each command resolves the QA repo exactly like the existing commands, and never writes the ledger except through the helper.
+
 ## Versioning and compatibility
 
 - `qa_ledger_schema: 1`. The helper refuses any other value (`UNSUPPORTED_SCHEMA`); it does not guess at a newer shape.
 - Later stages extend v1 **additively**, with new record kinds, new context fields, and new case namespaces (e.g. smoke suites). A helper that meets a kind or field it does not know reports `UNKNOWN_EVENT_KIND` / `UNKNOWN_FIELD` rather than ignoring it, so an old plugin never extends a ledger it cannot fully read. A breaking change bumps the schema.
 - Bug lifecycle events fit the existing model without redesign. A bug *is* a `bug:` scope; its events (reported, reproduced, fix claimed, reopened, closed) will be new record kinds on that scope's stream. Its re-tests are ordinary `retest` runs with `bug_ref`, tied to a specific build. Repeated fix → re-test FAIL → fix → re-test PASS cycles are just more builds and more runs.
 
-## CLI (Stage 1)
+## CLI
 
 Every command takes `--qa-repo <path>`, prints one JSON object, and exits 0 when `ok: true`, 1 otherwise (`error.code`, `error.message`).
 
@@ -212,9 +295,15 @@ view latest-build   --surface [--scope]
 view runs           [--scope] [--build]
 view case-history   --case [--surface] [--scope]
 view latest-result  --case --surface [--scope]
+view smoke          --build [--surface]                       (Stage 2)
+view execution      --scope [--surface]                       (Stage 2)
+view run-cases      --run                                     (Stage 2)
 plan rows     --plan <qa-repo-relative path>        (read-only; needs no ledger)
+suite check   --suite smoke/<surface>/smoke-suite.md (read-only; needs no ledger; Stage 2)
 ```
 
 `QA_LEDGER_NOW=<ISO>` pins the clock. It exists for deterministic tests and must not be set in normal use.
 
-Tests: `node --test scripts/qa-ledger.test.mjs` (behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+
+Implementation: `scripts/qa-ledger.mjs` is the single CLI entry point and the only place the write boundary (`Store`, in `scripts/lib/qa-ledger/store.mjs`) is constructed. The internal modules under `scripts/lib/qa-ledger/` parse, validate and derive; none of them writes to disk.

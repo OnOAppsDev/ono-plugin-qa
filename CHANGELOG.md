@@ -14,6 +14,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Test plans:** rows are referenced read-only by `<plan-folder>/<id>` with a row hash. Plans are never rewritten.
   - **Scope:** foundation only. No command, agent, skill or template uses the ledger yet, and every existing flow, the test-plan format and the xlsx export are unchanged.
   - **Tests:** `scripts/qa-ledger.test.mjs` (behavior, including an unchanged-xlsx golden check) and `scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+- Feature execution + smoke (lifecycle Stage 2), on top of the ledger, with no schema change:
+  - **Commands:**
+    - `/register-build` — an immutable build delivered to QA, tied to its feature scope.
+    - `/set-qa-scope` — required surfaces, devices/runtimes per surface, the approved test plan, per-surface exclusions, all QA-entered.
+    - `/define-smoke-suite` — a QA-authored, per-surface smoke suite at `smoke/<surface>/smoke-suite.md` with stable `S<n>` ids and retired-id tracking, per the new `templates/smoke-suite-template.md`.
+    - `/record-execution` — a manual smoke or functional run, walked case by case and persisted as each answer is given.
+  - **Smoke:** runs once per build and surface; FAIL, BLOCKED or NOT_RUN rejects the build for that surface.
+  - **Functional:** runs only against an approved plan attached to the scope, on a required surface and a declared device, once smoke passed or QA recorded a scope-specific override with a reason. `validate` re-checks the gate for every functional run.
+  - **Results:** a FAIL is only a result, and no bug is created. Results recorded against a plan row that later changed are reported as stale, not current.
+  - **Views:** `view smoke`, `view execution` (per-surface cases, pending/stale lists, device coverage, gate), `view run-cases`.
+  - **Contract:** two additive scope context fields (`exclusions`, `smoke_overrides`) and the `suite check` helper command.
+  - **Internal structure:** the helper is split into internal modules under `scripts/lib/qa-ledger/`. `qa-ledger.mjs` remains the single entry point and the only constructor of the write boundary.
+  - **Tests:** `scripts/qa-execution.test.mjs` (25), and mutation tests extended to cover the smoke gates.
+  - **Unchanged:** the existing planning commands, test-plan format and xlsx export.
 
 ## [0.7.0] - 2026-08-25
 

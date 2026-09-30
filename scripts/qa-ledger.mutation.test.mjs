@@ -1,10 +1,11 @@
 // Mutation tests for the ledger's critical invariants.
 //
-// Each mutant is a copy of scripts/qa-ledger.mjs with one guard disabled. The
-// tests in qa-ledger.test.mjs that cover that invariant are re-run against the
-// mutant (via QA_LEDGER_HELPER) and must FAIL — a mutant that survives means the
-// invariant is not actually tested. An unmutated copy is run first as a control,
-// so a broken harness cannot make every mutant look "killed".
+// Each mutant is a copy of the helper (scripts/qa-ledger.mjs plus its internal
+// modules under scripts/lib/qa-ledger/) with one guard disabled. The tests that
+// cover that invariant are re-run against the mutant (via QA_LEDGER_HELPER) and
+// must FAIL — a mutant that survives means the invariant is not actually tested.
+// An unmutated copy is run first as a control, so a broken harness cannot make
+// every mutant look "killed".
 //
 // Run: node --test scripts/qa-ledger.mutation.test.mjs
 import { test } from 'node:test';
@@ -16,69 +17,106 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SOURCE = fs.readFileSync(path.join(HERE, 'qa-ledger.mjs'), 'utf8');
-const SUITE = path.join(HERE, 'qa-ledger.test.mjs');
+const LIB = path.join('lib', 'qa-ledger');
+const SOURCES = ['qa-ledger.mjs', ...fs.readdirSync(path.join(HERE, LIB)).map((f) => path.join(LIB, f))];
+const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs') };
 
-// [invariant, exact source text, replacement, tests (by number) that must catch it]
+// [invariant, exact source text, replacement, tests that must catch it ({ suite: [test-name prefixes] })]
 const MUTANTS = [
-  ['duplicate build ids are refused', "if (findCaseInsensitive(store.list('builds'), `${id}.json`)) fail('DUPLICATE_BUILD'", 'if (false) fail(\'DUPLICATE_BUILD\'', ['04']],
-  ['terminal runs are immutable', "if (run.state !== 'open') fail('RUN_NOT_OPEN'", "if (false) fail('RUN_NOT_OPEN'", ['10']],
-  ['record hashes are verified', "return typeof hash === 'string' && hash === sha(canonical(rest));", 'return true;', ['15']],
-  ['the prev-hash chain is verified', 'if (rec.seq !== records.length || rec.prev !== (records.length ? prev : null)) {', 'if (false) {', ['15']],
-  ['nothing is recorded after a terminal event', "if (state !== 'open') {\n      errors.push({ code: 'EVENT_AFTER_TERMINAL'", "if (false) {\n      errors.push({ code: 'EVENT_AFTER_TERMINAL'", ['15']],
-  ['a correction supersedes the same case only', "if (prior.case_key !== o.case) fail('SUPERSEDE_CASE_MISMATCH'", "if (false) fail('SUPERSEDE_CASE_MISMATCH'", ['12']],
-  ['a run references a registered build', "if (!build) fail('UNKNOWN_BUILD'", "if (false) fail('UNKNOWN_BUILD'", ['05']],
-  ['retest/reproduction runs reference a bug', "if (BUG_REF_TYPES.includes(o.type) && !bugRef) fail('BUG_REF_REQUIRED'", "if (false) fail('BUG_REF_REQUIRED'", ['05']],
-  ['writes only append', 'fs.appendFileSync(this.p(...segments), line);', 'fs.writeFileSync(this.p(...segments), line);', ['08', '09']],
-  ['ledger paths never follow symlinks', "if (st.isSymbolicLink()) fail('SYMLINK_REFUSED'", "if (false) fail('SYMLINK_REFUSED'", ['16']],
+  // ---- Stage 1: structure and append-only history ----
+  ['duplicate build ids are refused', "if (findCaseInsensitive(store.list('builds'), `${id}.json`)) fail('DUPLICATE_BUILD'", "if (false) fail('DUPLICATE_BUILD'", { s1: ['04'], s2: ['S2-01'] }],
+  ['terminal runs are immutable', "if (run.state !== 'open') fail('RUN_NOT_OPEN'", "if (false) fail('RUN_NOT_OPEN'", { s1: ['10'] }],
+  ['record hashes are verified', "return typeof hash === 'string' && hash === sha(canonical(rest));", 'return true;', { s1: ['15'] }],
+  ['the prev-hash chain is verified', 'if (rec.seq !== records.length || rec.prev !== (records.length ? prev : null)) {', 'if (false) {', { s1: ['15'] }],
+  ['nothing is recorded after a terminal event', "if (state !== 'open') {\n      errors.push({ code: 'EVENT_AFTER_TERMINAL'", "if (false) {\n      errors.push({ code: 'EVENT_AFTER_TERMINAL'", { s1: ['15'] }],
+  ['a correction supersedes the same case only', "if (prior.case_key !== o.case) fail('SUPERSEDE_CASE_MISMATCH'", "if (false) fail('SUPERSEDE_CASE_MISMATCH'", { s1: ['12'] }],
+  ['a run references a registered build', "if (!build) fail('UNKNOWN_BUILD', `build ${o.build} is not registered`); // invariant:run-build-exists", "if (false) fail('UNKNOWN_BUILD', ''); // invariant:run-build-exists", { s1: ['05'] }],
+  ['retest/reproduction runs reference a bug', "if (BUG_REF_TYPES.includes(o.type) && !bugRef) fail('BUG_REF_REQUIRED'", "if (false) fail('BUG_REF_REQUIRED'", { s1: ['05'] }],
+  ['writes only append', 'fs.appendFileSync(this.p(...segments), line);', 'fs.writeFileSync(this.p(...segments), line);', { s1: ['08', '09'], s2: ['S2-13'] }],
+  ['ledger paths never follow symlinks', "if (st.isSymbolicLink()) fail('SYMLINK_REFUSED'", "if (false) fail('SYMLINK_REFUSED'", { s1: ['16'] }],
   [
     'plan reads stay inside the QA repo',
     "if (path.isAbsolute(rel) || !abs.startsWith(root + path.sep)) fail('PATH_OUTSIDE_QA_REPO'",
     "if (false) fail('PATH_OUTSIDE_QA_REPO'",
-    ['16'],
+    { s1: ['16'] },
     ["if (!real.startsWith(root + path.sep)) fail('PATH_OUTSIDE_QA_REPO'", "if (false) fail('PATH_OUTSIDE_QA_REPO'"],
   ],
-  ['results must resolve to a real test case', "if (!row) fail('UNKNOWN_CASE'", "if (false) fail('UNKNOWN_CASE'", ['11']],
-  ['latest-result ignores open runs', "h.run_state === 'closed' && h.superseded_by === null", 'h.superseded_by === null', ['18']],
+  ['results must resolve to a real test case', "if (!row) fail('UNKNOWN_CASE'", "if (false) fail('UNKNOWN_CASE'", { s1: ['11'] }],
+  ['latest-result ignores open runs', "h.run_state === 'closed' && h.superseded_by === null", 'h.superseded_by === null', { s1: ['18'] }],
   // Not listed: dropping `h.superseded_by === null` from latest-result is an equivalent
   // mutant — a correction always follows the result it supersedes inside the same run,
   // so the last result in history order is never a superseded one.
-  ['aborted runs never count as the latest result', "h.run_state === 'closed' && h.superseded_by === null", "h.run_state !== 'open' && h.superseded_by === null", ['20']],
+  ['aborted runs never count as the latest result', "h.run_state === 'closed' && h.superseded_by === null", "h.run_state !== 'open' && h.superseded_by === null", { s1: ['20'] }],
+
+  // ---- Stage 2: smoke gate and functional execution ----
+  ['functional runs wait for the smoke gate', 'if (!gate.open) {', 'if (false) {', { s2: ['S2-06', 'S2-07', 'S2-08', 'S2-10', 'S2-16'] }],
+  ['a smoke FAIL rejects the build', "if (counts.fail) return 'failed';", '', { s2: ['S2-07'] }],
+  ['a smoke BLOCKED rejects the build', "if (counts.blocked) return 'blocked';", '', { s2: ['S2-08'] }],
+  ['a smoke with NOT_RUN cases is not a pass', "if (counts.not_run) return 'incomplete';", '', { s2: ['S2-08'] }],
+  ['smoke runs once per build and surface', "if (smoke.run_id) fail('SMOKE_ALREADY_RECORDED'", "if (false) fail('SMOKE_ALREADY_RECORDED'", { s2: ['S2-07', 'S2-10'] }],
+  ['only one smoke run may be open per build and surface', "if (smoke.status === 'in_progress') fail('SMOKE_IN_PROGRESS'", "if (false) fail('SMOKE_IN_PROGRESS'", { s2: ['S2-06'] }],
+  ['a smoke run is closed only when every case has a result', "if (missing.length) fail('SMOKE_INCOMPLETE'", "if (false) fail('SMOKE_INCOMPLETE'", { s2: ['S2-06'] }],
+  ['smoke executes the suite of its own surface', "if (planRefs.length !== 1 || planRefs[0].plan !== smokeSuitePath(surface)) fail('INVALID_SMOKE_SUITE'", "if (false) fail('INVALID_SMOKE_SUITE'", { s2: ['S2-05'] }],
+  ['an override needs a reason', "idOk(v.build_id) && idOk(v.surface) && isStr(v.reason)", 'idOk(v.build_id) && idOk(v.surface)', { s2: ['S2-09'] }],
+  ['an override opens the gate only for its own scope', "const scope = model.scopes.get(scopeRef);\n  const override", "const scope = [...model.scopes.values()].find((s) => activeOverrides(s).has(`${buildId}@${surface}`)) ?? model.scopes.get(scopeRef);\n  const override", { s2: ['S2-09'] }],
+  ['a retracted override closes the gate', "else if (e.kind === 'context.retract') active.delete(e.value);", '', { s2: ['S2-09'] }],
+  ['functional runs need an approved plan', "if (status !== 'approved') fail('PLAN_NOT_APPROVED'", "if (false) fail('PLAN_NOT_APPROVED'", { s2: ['S2-21'] }],
+  ['functional runs need a declared device', "if (!matching.length) fail('DEVICE_NOT_IN_SCOPE'", "if (false) fail('DEVICE_NOT_IN_SCOPE'", { s2: ['S2-04'] }],
+  ['excluded cases cannot be recorded', "if (excluded) fail('CASE_EXCLUDED'", "if (false) fail('CASE_EXCLUDED'", { s2: ['S2-22'] }],
+  ['a changed plan row makes evidence stale', "if (latest.case_ref.row_hash !== row.row_hash) return 'stale';", '', { s2: ['S2-14'] }],
+  ['validate re-derives the gate for every functional run', "if (!gateFor(model, h.scope, h.build_id, h.surface, h.at).open) errors.push", 'if (false) errors.push', { s2: ['S2-24'] }],
+  ['validate refuses a second closed smoke run', "if (closedSmoke.has(key)) errors.push", 'if (false) errors.push', { s2: ['S2-24'] }],
+  ['execution views count only closed functional runs', "r.header.execution_type === 'functional' && r.state === 'closed'", "r.header.execution_type === 'functional'", { s2: ['S2-11', 'S2-14'] }],
 ];
 
-function runSuite(helperSource, tests) {
+function copyHelper(dir, mutate = (src) => src) {
+  for (const rel of SOURCES) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), mutate(rel, fs.readFileSync(path.join(HERE, rel), 'utf8')));
+  }
+  return path.join(dir, 'qa-ledger.mjs');
+}
+
+function runSuites(mutate, tests) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-ledger-mutant-'));
-  const helper = path.join(dir, 'qa-ledger.mjs');
-  fs.writeFileSync(helper, helperSource);
-  const pattern = `^(${tests.join('|')}) `;
+  const helper = copyHelper(dir, mutate);
   // NODE_TEST_CONTEXT must not leak in, or the child reports to this runner instead of stdout.
   const { NODE_TEST_CONTEXT, ...env } = process.env;
-  const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', `--test-name-pattern=${pattern}`, SUITE], {
-    encoding: 'utf8',
-    env: { ...env, QA_LEDGER_HELPER: helper },
-  });
+  const outcomes = [];
+  for (const [suite, names] of Object.entries(tests)) {
+    const pattern = `^(${names.join('|')}) `;
+    const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', `--test-name-pattern=${pattern}`, SUITES[suite]], { encoding: 'utf8', env: { ...env, QA_LEDGER_HELPER: helper } });
+    outcomes.push({ suite, status: r.status, ran: Number(/^# tests (\d+)$/m.exec(r.stdout)?.[1] ?? 0), output: r.stdout + r.stderr });
+  }
   fs.rmSync(dir, { recursive: true, force: true });
-  const ran = Number(/^# tests (\d+)$/m.exec(r.stdout)?.[1] ?? 0);
-  return { status: r.status, ran, output: r.stdout + r.stderr };
+  return outcomes;
+}
+
+function locate(target) {
+  const hits = SOURCES.filter((rel) => fs.readFileSync(path.join(HERE, rel), 'utf8').includes(target));
+  assert.equal(hits.length, 1, `mutation target must occur in exactly one source file (found ${hits.length}) — update this harness: ${target}`);
+  return hits[0];
 }
 
 test('control: the unmutated helper passes every targeted test', () => {
-  const all = [...new Set(MUTANTS.flatMap((m) => m[3]))];
-  const r = runSuite(SOURCE, all);
-  assert.equal(r.status, 0, r.output);
-  assert.equal(r.ran, all.length, 'every targeted test was selected');
+  const tests = {};
+  for (const m of MUTANTS) for (const [suite, names] of Object.entries(m[3])) tests[suite] = [...new Set([...(tests[suite] ?? []), ...names])];
+  for (const o of runSuites((rel, src) => src, tests)) {
+    assert.equal(o.status, 0, o.output);
+    assert.equal(o.ran, tests[o.suite].length, `every targeted ${o.suite} test was selected`);
+  }
 });
 
 for (const [invariant, target, replacement, tests, extra] of MUTANTS) {
   test(`mutant killed: ${invariant}`, () => {
-    assert.ok(SOURCE.includes(target), `mutation target not found — update this harness: ${target}`);
-    let mutated = SOURCE.replace(target, replacement);
-    if (extra) {
-      assert.ok(SOURCE.includes(extra[0]), `mutation target not found: ${extra[0]}`);
-      mutated = mutated.replace(extra[0], extra[1]);
-    }
-    const r = runSuite(mutated, tests);
-    assert.ok(r.ran > 0, 'the targeted tests ran');
-    assert.notEqual(r.status, 0, `the mutant survived — tests ${tests.join(', ')} do not guard "${invariant}"\n${r.output.slice(-2000)}`);
+    const file = locate(target);
+    const extraFile = extra ? locate(extra[0]) : null;
+    const outcomes = runSuites((rel, src) => {
+      let out = rel === file ? src.replace(target, replacement) : src;
+      if (extra && rel === extraFile) out = out.replace(extra[0], extra[1]);
+      return out;
+    }, tests);
+    assert.ok(outcomes.every((o) => o.ran > 0), 'the targeted tests ran');
+    assert.ok(outcomes.some((o) => o.status !== 0), `the mutant survived — ${JSON.stringify(tests)} do not guard "${invariant}"\n${outcomes.map((o) => o.output.slice(-1500)).join('\n')}`);
   });
 }
