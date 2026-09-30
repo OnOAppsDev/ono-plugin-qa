@@ -4,7 +4,7 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.8.0] - 2026-09-30
 
 ### Added
 - QA ledger foundation (lifecycle Stage 1): `scripts/qa-ledger.mjs`, a zero-dependency helper that is the only writer of `<qa-repo>/qa-ledger/`, plus `docs/qa-ledger-contract.md` and the Stage-1 boundary in `docs/qa-readiness-contract.md`.

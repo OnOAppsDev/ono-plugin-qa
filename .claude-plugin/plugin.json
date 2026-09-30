@@ -1,7 +1,7 @@
 {
   "name": "ono-plugin-qa",
   "description": "Figma- and spec/LLD-grounded QA test planning, approval, sync, dev/QA coverage gap analysis, Appium automation generation, and live locator verification for Ono Apps' features across React, React Native, iOS, and Android, run in parallel with ono-mobile-dev-plugin.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": {
     "name": "Ono Apps",
     "email": "magen@onoapps.com"
