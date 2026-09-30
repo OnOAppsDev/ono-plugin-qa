@@ -1,0 +1,219 @@
+// Mutation tests for the ledger's critical invariants.
+//
+// Each mutant is a copy of the helper (scripts/qa-ledger.mjs plus its internal
+// modules under scripts/lib/qa-ledger/) with one guard disabled. The tests that
+// cover that invariant are re-run against the mutant (via QA_LEDGER_HELPER) and
+// must FAIL — a mutant that survives means the invariant is not actually tested.
+// An unmutated copy is run first as a control, so a broken harness cannot make
+// every mutant look "killed".
+//
+// Run: node --test scripts/qa-ledger.mutation.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const LIB = path.join('lib', 'qa-ledger');
+// The vendored Project Knowledge reader is copied with every mutant (never mutated) so Stage 5 can run.
+const SOURCES = ['qa-ledger.mjs', ...fs.readdirSync(path.join(HERE, LIB)).map((f) => path.join(LIB, f)), path.join('vendor', 'read-repo-knowledge.ts')];
+const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs'), s4: path.join(HERE, 'qa-handoff.test.mjs'), s5: path.join(HERE, 'qa-regression.test.mjs'), s6: path.join(HERE, 'qa-readiness.test.mjs'), s7: path.join(HERE, 'qa-release-readiness.test.mjs') };
+
+// [invariant, exact source text, replacement, tests that must catch it ({ suite: [test-name prefixes] })]
+const MUTANTS = [
+  // ---- Stage 1: structure and append-only history ----
+  ['duplicate build ids are refused', "if (findCaseInsensitive(store.list('builds'), `${id}.json`)) fail('DUPLICATE_BUILD'", "if (false) fail('DUPLICATE_BUILD'", { s1: ['04'], s2: ['S2-01'] }],
+  ['terminal runs are immutable', "if (run.state !== 'open') fail('RUN_NOT_OPEN'", "if (false) fail('RUN_NOT_OPEN'", { s1: ['10'] }],
+  ['record hashes are verified', "return typeof hash === 'string' && hash === sha(canonical(rest));", 'return true;', { s1: ['15'] }],
+  ['the prev-hash chain is verified', 'if (rec.seq !== records.length || rec.prev !== (records.length ? prev : null)) {', 'if (false) {', { s1: ['15'] }],
+  ['nothing is recorded after a terminal event', "if (state !== 'open') {\n      errors.push({ code: 'EVENT_AFTER_TERMINAL'", "if (false) {\n      errors.push({ code: 'EVENT_AFTER_TERMINAL'", { s1: ['15'] }],
+  ['a correction supersedes the same case only', "if (prior.case_key !== o.case) fail('SUPERSEDE_CASE_MISMATCH'", "if (false) fail('SUPERSEDE_CASE_MISMATCH'", { s1: ['12'] }],
+  ['a run references a registered build', "if (!build) fail('UNKNOWN_BUILD', `build ${o.build} is not registered`); // invariant:run-build-exists", "if (false) fail('UNKNOWN_BUILD', ''); // invariant:run-build-exists", { s1: ['05'] }],
+  ['retest/reproduction runs reference a bug', "if (BUG_REF_TYPES.includes(o.type) && !bugRef) fail('BUG_REF_REQUIRED'", "if (false) fail('BUG_REF_REQUIRED'", { s1: ['05'] }],
+  ['writes only append', 'fs.appendFileSync(this.p(...segments), line);', 'fs.writeFileSync(this.p(...segments), line);', { s1: ['08', '09'], s2: ['S2-13'], s3: ['S3-28'] }],
+  ['ledger paths never follow symlinks', "if (st.isSymbolicLink()) fail('SYMLINK_REFUSED'", "if (false) fail('SYMLINK_REFUSED'", { s1: ['16'] }],
+  [
+    'plan reads stay inside the QA repo',
+    "if (path.isAbsolute(rel) || !abs.startsWith(root + path.sep)) fail('PATH_OUTSIDE_QA_REPO'",
+    "if (false) fail('PATH_OUTSIDE_QA_REPO'",
+    { s1: ['16'] },
+    ["if (!real.startsWith(root + path.sep)) fail('PATH_OUTSIDE_QA_REPO'", "if (false) fail('PATH_OUTSIDE_QA_REPO'"],
+  ],
+  ['results must resolve to a real test case', "if (!row) fail('UNKNOWN_CASE'", "if (false) fail('UNKNOWN_CASE'", { s1: ['11'] }],
+  ['latest-result ignores open runs', "h.run_state === 'closed' && h.superseded_by === null", 'h.superseded_by === null', { s1: ['18'] }],
+  // Not listed: dropping `h.superseded_by === null` from latest-result is an equivalent
+  // mutant — a correction always follows the result it supersedes inside the same run,
+  // so the last result in history order is never a superseded one.
+  ['aborted runs never count as the latest result', "h.run_state === 'closed' && h.superseded_by === null", "h.run_state !== 'open' && h.superseded_by === null", { s1: ['20'] }],
+
+  // ---- Stage 2: smoke gate and functional execution ----
+  ['functional runs wait for the smoke gate', 'if (!gate.open) {', 'if (false) {', { s2: ['S2-06', 'S2-07', 'S2-08', 'S2-10', 'S2-16'], s3: ['S3-29', 'S3-31'] }],
+  ['a smoke FAIL rejects the build', "if (counts.fail) return 'failed';", '', { s2: ['S2-07'] }],
+  ['a smoke BLOCKED rejects the build', "if (counts.blocked) return 'blocked';", '', { s2: ['S2-08'] }],
+  ['a smoke with NOT_RUN cases is not a pass', "if (counts.not_run) return 'incomplete';", '', { s2: ['S2-08'] }],
+  ['smoke runs once per build and surface', "if (smoke.run_id) fail('SMOKE_ALREADY_RECORDED'", "if (false) fail('SMOKE_ALREADY_RECORDED'", { s2: ['S2-07', 'S2-10'] }],
+  ['only one smoke run may be open per build and surface', "if (smoke.status === 'in_progress') fail('SMOKE_IN_PROGRESS'", "if (false) fail('SMOKE_IN_PROGRESS'", { s2: ['S2-06'] }],
+  ['a smoke run is closed only when every case has a result', "if (missing.length) fail('SMOKE_INCOMPLETE'", "if (false) fail('SMOKE_INCOMPLETE'", { s2: ['S2-06'] }],
+  ['smoke executes the suite of its own surface', "if (planRefs.length !== 1 || planRefs[0].plan !== smokeSuitePath(surface)) fail('INVALID_SMOKE_SUITE'", "if (false) fail('INVALID_SMOKE_SUITE'", { s2: ['S2-05'] }],
+  ['an override needs a reason', "idOk(v.build_id) && idOk(v.surface) && isStr(v.reason)", 'idOk(v.build_id) && idOk(v.surface)', { s2: ['S2-09'] }],
+  ['an override opens the gate only for its own scope', "const scope = model.scopes.get(scopeRef);\n  const override", "const scope = [...model.scopes.values()].find((s) => activeOverrides(s).has(`${buildId}@${surface}`)) ?? model.scopes.get(scopeRef);\n  const override", { s2: ['S2-09'] }],
+  ['a retracted override closes the gate', "else if (e.kind === 'context.retract') active.delete(e.value);", '', { s2: ['S2-09'] }],
+  ['functional runs need an approved plan', "if (status !== 'approved') fail('PLAN_NOT_APPROVED'", "if (false) fail('PLAN_NOT_APPROVED'", { s2: ['S2-21'] }],
+  ['functional runs need a declared device', "if (!matching.length) fail('DEVICE_NOT_IN_SCOPE'", "if (false) fail('DEVICE_NOT_IN_SCOPE'", { s2: ['S2-04'] }],
+  ['excluded cases cannot be recorded', "if (excluded) fail('CASE_EXCLUDED'", "if (false) fail('CASE_EXCLUDED'", { s2: ['S2-22'] }],
+  ['a changed plan row makes evidence stale', "if (latest.case_ref.row_hash !== row.row_hash) return 'stale';", '', { s2: ['S2-14'] }],
+  ['validate re-derives the gate for every functional run', "if (!gateFor(model, h.scope, h.build_id, h.surface, h.at).open) errors.push", 'if (false) errors.push', { s2: ['S2-24'] }],
+  ['validate refuses a second closed smoke run', "if (closedSmoke.has(key)) errors.push", 'if (false) errors.push', { s2: ['S2-24'] }],
+  // ---- Stage 3: bug state transitions and close/reopen guards ----
+  ['a bug can only be reported from a FAIL', "if (result.result !== 'fail') fail('NOT_A_FAILURE'", "if (false) fail('NOT_A_FAILURE'", { s3: ['S3-03'] }],
+  ['reproduction is only for a bug not yet reproduced', "if (!AWAITING_VERIFICATION.includes(bug.state)) fail('BUG_NOT_AWAITING_VERIFICATION'", "if (false) fail('BUG_NOT_AWAITING_VERIFICATION'", { s3: ['S3-07', 'S3-27'] }],
+  ['a fix claim needs a reproduced bug', "if (AWAITING_VERIFICATION.includes(bug.state)) fail('BUG_NOT_REPRODUCED', `${bug.bug} is ${bug.state} — QA must reproduce", "if (false) fail('BUG_NOT_REPRODUCED', `${bug.bug} is ${bug.state} — QA must reproduce", { s3: ['S3-10'] }],
+  ['a closed bug takes no fix claim', "if (CLOSED.includes(bug.state)) fail('BUG_CLOSED', `${bug.bug} is ${bug.state} — a closed bug takes no fix claim`);", '', { s3: ['S3-08'] }],
+  ['a fix claim never closes a bug', "      state = 'fix_delivered';", "      state = 'closed_verified';", { s3: ['S3-11'] }],
+  ['a re-test waits for a fix after a reopen', "if (DEV_OWNED.includes(bug.state)) fail('BUG_AWAITING_FIX'", "if (false) fail('BUG_AWAITING_FIX'", { s3: ['S3-14', 'S3-15', 'S3-20'] }],
+  ['a re-test never runs on a build older than the fix', "if (idx.get(buildId) < idx.get(bug.current_fix_build)) fail('RETEST_BUILD_BEFORE_FIX'", "if (false) fail('RETEST_BUILD_BEFORE_FIX'", { s3: ['S3-15'] }],
+  ['a re-test FAIL reopens the bug', "          state = 'reopened';", '', { s3: ['S3-13', 'S3-14'] }],
+  ['a reopen ends the failed fix cycle', "cycle.claim.outcome = 'failed';\n          cycle = null;", "cycle.claim.outcome = 'failed';", { s3: ['S3-14'] }],
+  ['a re-test PASS closes only when every affected surface passed', 'if (surfaces.every((s) => cycle.passed.has(s))) {', 'if (true) {', { s3: ['S3-12'] }],
+  ['a BLOCKED re-test never counts as a pass', "if (results.includes('blocked') || results.includes('not_run')) return 'blocked';", '', { s3: ['S3-12'] }],
+  ['a bug run needs its scenario outcome to close', "if (runOutcome(run, h.bug_ref) === null) fail('BUG_OUTCOME_REQUIRED'", "if (false) fail('BUG_OUTCOME_REQUIRED'", { s3: ['S3-27'] }],
+  ['verified is never a manual resolution', 'if (!RESOLUTIONS.includes(rec.resolution)) return bad(', 'if (false) return bad(', { s3: ['S3-20'] }],
+  ['a closed bug cannot be resolved again', "if (CLOSED.includes(bug.state)) fail('BUG_CLOSED', `${bug.bug} is ${bug.state}`); // invariant:resolve-open-only", '// resolve guard removed', { s3: ['S3-21'] }],
+  ['bug re-tests wait for the smoke gate of their exact build', "if (o.type === 'retest') requireSmokeGate(", "if (false) requireSmokeGate(", { s3: ['S3-29', 'S3-30', 'S3-31', 'S3-32', 'S3-35', 'S3-38'] }],
+  ['validate re-derives the smoke gate for every re-test', "if (h.execution_type === 'retest' && !gateFor(", "if (false && !gateFor(", { s3: ['S3-37'] }],
+  ['a later fix claim becomes the fix under test', 'cycle = { claim, idx: idx.get(claim.build_id), passed: new Set() };', 'cycle ??= { claim, idx: idx.get(claim.build_id), passed: new Set() };', { s3: ['S3-38'] }],
+  ['a superseded fix build cannot be re-tested', "if (superseded) fail('FIX_CLAIM_SUPERSEDED'", "if (false) fail('FIX_CLAIM_SUPERSEDED'", { s3: ['S3-38'] }],
+  ['a smoke run records only its own suite cases', "if (h.execution_type === 'smoke' && !caseKey.startsWith(", "if (false && !caseKey.startsWith(", { s3: ['S3-39'] }],
+  ['smoke run-cases never offer the bug scenario', "h.execution_type === 'smoke' ? [] : ", '', { s3: ['S3-39', 'S3-17'] }],
+  // ---- Stage 4: Dev → QA handoff integration ----
+  ['a handoff that is not ready-for-qa is refused', 'if (r.handoff.status !== READY_STATUS) { // invariant:handoff-status-gate', 'if (false) { // invariant:handoff-status-gate', { s4: ['S4-05', 'S4-06'] }],
+  ['a draft approval covers only the exact handoff content', 'e.value.handoff_fingerprint === fingerprint', 'true', { s4: ['S4-06'] }],
+  ['only rows owned by qa become QA debt', "const qaRows = pv.rows.filter((r) => r.owner === 'qa'); // invariant:qa-owned-only", 'const qaRows = pv.rows; // invariant:qa-owned-only', { s4: ['S4-09'] }],
+  ['accessibility notRecorded always needs attention', "attention: statuses.includes('notRecorded') || statuses.length === 0", 'attention: false', { s4: ['S4-10'] }],
+  ['the handoff is found through qa_handoff_link', 'else if (b.qa_handoff_link) {', 'else if (false) {', { s4: ['S4-01', 'S4-04'] }],
+  ['several candidate breakdowns are never resolved silently', "if (candidates.length !== 1) fail('NEED_BREAKDOWN_PATH'", "if (candidates.length === 0) fail('NEED_BREAKDOWN_PATH'", { s4: ['S4-03'] }],
+  ['the recorded breakdown link resolves the chain next time', 'else if (recorded?.task_breakdown_link) {', 'else if (false) {', { s4: ['S4-12'] }],
+  ['a handoff that breaks the section contract is refused', "if (!r.handoff.contract_ok) fail('HANDOFF_CONTRACT_MISMATCH'", "if (false) fail('HANDOFF_CONTRACT_MISMATCH'", { s4: ['S4-07', 'S4-09'] }],
+  ['a scope is never silently rebound to another Dev feature', "if (recorded && recorded.feature !== r.identity.feature) fail('IDENTITY_CONFLICT'", "if (false) fail('IDENTITY_CONFLICT'", { s4: ['S4-11'] }],
+  [
+    'Dev artifact links never escape the code repo',
+    "if (path.isAbsolute(rel) || !abs.startsWith(root + path.sep)) fail('PATH_OUTSIDE_CODE_REPO'",
+    "if (false) fail('PATH_OUTSIDE_CODE_REPO'",
+    { s4: ['S4-20'] },
+    ["if (!fs.realpathSync(abs).startsWith(root + path.sep)) fail('PATH_OUTSIDE_CODE_REPO'", "if (false) fail('PATH_OUTSIDE_CODE_REPO'"],
+  ],
+  // ---- Stage 5: Project Knowledge + regression ----
+  ['relationships stay first-degree', 'const edges = (k.capabilityRelationships ?? []).filter((e) => e.from === capId || e.to === capId); // invariant:first-degree-only', 'const edges = k.capabilityRelationships ?? [];', { s5: ['S5-08'] }],
+  ['evidence is always re-checked against the current source', "args.push('--verify'); // invariant:always-verify", '// verify removed', { s5: ['S5-07', 'S5-10'] }],
+  ['failed evidence is never presented as context', "if (rel.verification.status !== 'verified') { // invariant:evidence-verified", 'if (false) {', { s5: ['S5-10'] }],
+  ['an ambiguous capability is never auto-selected', "if (lookup.status === 'found') return { id: lookup.matches[0].id", 'if (lookup.matches.length) return { id: lookup.matches[0].id', { s5: ['S5-06'] }],
+  ['regression is never required by default', "if (!['yes', 'no'].includes(o.required)) fail('INVALID_VALUE'", "if (false) fail('INVALID_VALUE'", { s5: ['S5-13'] }],
+  ['every candidate is explicitly included or excluded', "if (unaddressed.length) fail('UNADDRESSED_CANDIDATE'", "if (false) fail('UNADDRESSED_CANDIDATE'", { s5: ['S5-11'] }],
+  ['an excluded candidate needs a reason', "if (!reason) fail('MISSING_ARGUMENT', `--exclude", "if (false) fail('MISSING_ARGUMENT', `--exclude", { s5: ['S5-15'] }],
+  ['regression runs wait for the smoke gate of their build', "if (o.type === 'regression') requireSmokeGate(", 'if (false) requireSmokeGate(', { s5: ['S5-20'] }],
+  ['regression records only the selected cases', "if (!decision.cases.includes(caseKey)) fail('CASE_NOT_SELECTED'", "if (false) fail('CASE_NOT_SELECTED'", { s5: ['S5-21'] }],
+  ['regression evidence never carries to another build', 'if (!decision.targets.some((t) => t.build_id === o.build && t.surface === o.surface)) fail(', 'if (false) fail(', { s5: ['S5-23'] }],
+  ['only the current decision can be executed', "if (!current || current.id !== decision.id) fail('REGRESSION_DECISION_SUPERSEDED'", "if (false) fail('REGRESSION_DECISION_SUPERSEDED'", { s5: ['S5-23'] }],
+  ['validate refuses regression outside its decision', "if (!decision.required || !onTarget || strays.length) errors.push({ code: 'REGRESSION_OUTSIDE_DECISION'", "if (false) errors.push({ code: 'REGRESSION_OUTSIDE_DECISION'", { s5: ['S5-29'] }],
+  ['validate re-derives the smoke gate for every regression run', 'if (!gateHeld) errors.push', 'if (false) errors.push', { s5: ['S5-30'] }],
+  // ---- Stage 6: readiness rules, exceptions, fingerprint, sign-off ----
+  ['R1: the candidate build must be accepted by smoke', "if (s.build_id && s.smoke !== 'passed') add(", 'if (false) add(', { s6: ['S6-02'] }],
+  ['R2: every feature plan must be approved', "for (const p of plans) if (p.status !== 'approved') add(", 'for (const p of plans) if (false) add(', { s6: ['S6-03'] }],
+  ['R3: every applicable case must PASS', "if (c.status === 'pass' || c.status === 'excluded') continue; // invariant:r3-functional", 'continue; // invariant:r3-functional', { s6: ['S6-04'] }],
+  ['R3: stale evidence never counts as current', "if (c.status === 'pass' || c.status === 'excluded') continue; // invariant:r3-functional", "if (c.status === 'pass' || c.status === 'excluded' || c.status === 'stale') continue; // invariant:r3-functional", { s6: ['S6-17'] }],
+  ['R4: a blocking bug needs verified / duplicate / not reproducible', "const ok = blocking ? BLOCKING_CLOSES.includes(b.state) : b.state.startsWith('closed_');", "const ok = b.state.startsWith('closed_');", { s6: ['S6-05'] }],
+  ['R5: a delivered fix must be re-tested', "if (b.state === 'fix_delivered') add(`R5:", "if (false) add(`R5:", { s6: ['S6-06'] }],
+  ['R5: the candidate must contain the verified fix', 'if (c && idx.get(c) < idx.get(b.fixed_in_build)) add(', 'if (false) add(', { s6: ['S6-06'] }],
+  ['R6: a regression decision must exist', "if (!decision) add('R6'", "if (false) add('R6'", { s6: ['S6-07'] }],
+  ['R7: required regression cases must PASS', "for (const c of t.cases) if (c.status !== 'pass') add(", 'for (const c of t.cases) if (false) add(', { s6: ['S6-08'] }],
+  ['R7: the decision must target the candidate build', 'if (onSurface.length && !onSurface.some(', 'if (false && !onSurface.some(', { s6: ['S6-08'] }],
+  ['R8: QA debt must be discharged or excepted', 'for (const d of debt) if (!d.discharged) add(', 'for (const d of debt) if (false) add(', { s6: ['S6-09'] }],
+  ['R9: every required surface needs a candidate build', 'for (const c of candidates) if (!c.build_id) add(', 'for (const c of candidates) if (false) add(', { s6: ['S6-02'] }],
+  ['debt is discharged only by an effective PASS', "if (run.header.scope !== scope.ref || run.state !== 'closed' || result.superseded_by !== null || result.result !== 'pass') fail(", 'if (false) fail(', { s6: ['S6-09'] }],
+  ['an exception covers only the exact blocker it names', 'const ex = exceptions.find((e) => e.item === b.id && ', 'const ex = exceptions.find((e) => true && ', { s6: ['S6-10'] }],
+  ['an exception must name a current blocker', "if (!current.blockers.some((b) => b.id === o.item)) fail('UNKNOWN_BLOCKER'", "if (false) fail('UNKNOWN_BLOCKER'", { s6: ['S6-11'] }],
+  ['any unexcepted blocker means NOT_READY', "if (blockers.some((b) => !b.excepted_by)) return 'NOT_READY'; // invariant:verdict", '// verdict guard removed', { s6: ['S6-02', 'S6-10'] }],
+  ['READY_WITH_EXCEPTIONS is never reported as READY', "return blockers.length ? 'READY_WITH_EXCEPTIONS' : 'READY';", "return 'READY';", { s6: ['S6-10'] }],
+  ['the fingerprint covers the scope’s own records', 'if (r.field !== SIGNOFF_FIELD) out.push({ key: `scope:', 'if (false) out.push({ key: `scope:', { s6: ['S6-14', 'S6-21'] }],
+  ['the fingerprint covers linked bugs', 'for (const ref of bugRefs) if (ref !== scope.ref) stream(model.scopes.get(ref));', '', { s6: ['S6-20'] }],
+  ['the fingerprint covers consumed runs', "out.push({ key: `run:${h.run_id}:${run.state}`", "void ({ key: `run:${h.run_id}:${run.state}`", { s6: ['S6-25'] }],
+  ['the fingerprint covers plan content', 'out.push({ key: `plan:${p}`, hash: fp, at: null });', '', { s6: ['S6-25'] }],
+  ['a sign-off is never part of its own fingerprint', 'if (r.field !== SIGNOFF_FIELD) out.push({ key: `scope:', 'if (true) out.push({ key: `scope:', { s6: ['S6-24'] }],
+  ['a sign-off is valid only for the exact fingerprint', 'ev.value.fingerprint === current.fingerprint && ', '', { s6: ['S6-14', 'S6-21'] }],
+  ['NOT_READY can never be signed off', "if (r.verdict === 'NOT_READY') fail('SIGNOFF_NOT_READY'", "if (false) fail('SIGNOFF_NOT_READY'", { s6: ['S6-29'] }],
+  ['validate replays every bug transition', 'errors.push(...deriveBug(model, scope.ref).violations);', '', { s3: ['S3-26'] }],
+  ['execution views count only closed functional runs', "r.header.execution_type === 'functional' && r.state === 'closed'", "r.header.execution_type === 'functional'", { s2: ['S2-11', 'S2-14'] }],
+  // Stage 7 follow-up: release artifact, bug identity, freshness token.
+  ['a release artifact can be signed off', 'readinessTarget(store, o.scope, { release: true })', 'readinessTarget(store, o.scope, { release: false })', { s7: ['G1-03'] }],
+  ['pins and exceptions stay member-level', 'if (!release) requireNonRelease(scope);', 'if (false) requireNonRelease(scope);', { s7: ['G1-02'] }],
+  ['release sign-offs are listed and can go stale', '[...model.scopes.values()].sort((a, b) => (a.ref < b.ref ? -1 : 1));', "[...model.scopes.values()].filter((s) => s.kind !== 'release').sort((a, b) => (a.ref < b.ref ? -1 : 1));", { s7: ['G1-04'] }],
+  ['the release fingerprint covers every member', 'members.map((m) => [m.scope, m.fingerprint])])); // invariant:release-fingerprint', '[]])); // invariant:release-fingerprint', { s7: ['G1-04'] }],
+  ['members disagreeing on a candidate build conflict', 'if (ids.length > 1) return { surface, build_id: null', 'if (false) return { surface, build_id: null', { s7: ['G1-05'] }],
+  ['a release-level blocker makes the release NOT_READY', "const verdict = ownBlocked || members.some(", 'const verdict = members.some(', { s7: ['G1-05'] }],
+  ['the artifact carries the bug external_ref', 'external_ref: ownBug?.external_ref ?? null,', 'external_ref: null,', { s7: ['G2-01'] }],
+  ['the artifact records its freshness token', 'freshness_token: ${r.freshness_token}', 'freshness_token: ${r.fingerprint}', { s7: ['G3-03'] }],
+  ['freshness ignores sign-off events', "records.filter((r) => r.field !== 'signoffs').map((r) => r.hash); // invariant:freshness-excludes-signoffs", 'records.map((r) => r.hash); // invariant:freshness-excludes-signoffs', { s7: ['G3-02'] }],
+  ['freshness watches bugs related to the scope', ".some((r) => (r.kind === 'bug.reported'", '.some((r) => false && (r.kind === \'bug.reported\'', { s7: ['G3-01'] }],
+  ['freshness watches the scope’s own runs', 'db.runs.filter((run) => watched.has(header(run).scope) || bugs.has(header(run).bug_ref)); // invariant:freshness-runs', 'db.runs.filter((run) => false); // invariant:freshness-runs', { s7: ['G3-01'] }],
+  ['freshness watches builds related to the scope', 'if ((b.related_scopes ?? []).includes(ref) || (b.fixes_claimed ?? []).some((x) => bugs.has(x))) builds.add(id); // invariant:freshness-builds', 'if (false) builds.add(id); // invariant:freshness-builds', { s7: ['G3-01'] }],
+  ['freshness covers plan content', "return [p, fs.existsSync(f) ? sha(fs.readFileSync(f)) : 'missing']; // invariant:freshness-plans", "return [p, 'missing']; // invariant:freshness-plans", { s7: ['G3-01'] }],
+  ['every artifact is sealed with its integrity hash', 'return sealArtifact(renderUnsealed(r));', 'return renderUnsealed(r);', { s7: ['G4-01'] }],
+  ['the integrity hash covers the whole artifact', 'artifact_integrity: ${sha(text)}${text.slice(end)}`; // invariant:artifact-integrity', 'artifact_integrity: ${sha(text.slice(0, end))}${text.slice(end)}`; // invariant:artifact-integrity', { s7: ['G4-02'] }],
+  ['the integrity hash is over the unsealed content', 'artifact_integrity: ${sha(text)}${text.slice(end)}`; // invariant:artifact-integrity', 'artifact_integrity: ${sha(`${text}\\n`)}${text.slice(end)}`; // invariant:artifact-integrity', { s7: ['G4-01'] }],
+  ['a release token covers its members’ tokens', 'members: members.map((m) => [m, scopeToken(root, db, m)])', 'members', { s7: ['G3-02'] }],
+];
+
+function copyHelper(dir, mutate = (src) => src) {
+  for (const rel of SOURCES) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), mutate(rel, fs.readFileSync(path.join(HERE, rel), 'utf8')));
+  }
+  return path.join(dir, 'qa-ledger.mjs');
+}
+
+function runSuites(mutate, tests) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-ledger-mutant-'));
+  const helper = copyHelper(dir, mutate);
+  // NODE_TEST_CONTEXT must not leak in, or the child reports to this runner instead of stdout.
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
+  const outcomes = [];
+  for (const [suite, names] of Object.entries(tests)) {
+    const pattern = `^(${names.join('|')}) `;
+    const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', `--test-name-pattern=${pattern}`, SUITES[suite]], { encoding: 'utf8', env: { ...env, QA_LEDGER_HELPER: helper } });
+    outcomes.push({ suite, status: r.status, ran: Number(/^# tests (\d+)$/m.exec(r.stdout)?.[1] ?? 0), output: r.stdout + r.stderr });
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  return outcomes;
+}
+
+function locate(target) {
+  const hits = SOURCES.filter((rel) => fs.readFileSync(path.join(HERE, rel), 'utf8').includes(target));
+  assert.equal(hits.length, 1, `mutation target must occur in exactly one source file (found ${hits.length}) — update this harness: ${target}`);
+  return hits[0];
+}
+
+test('control: the unmutated helper passes every targeted test', () => {
+  const tests = {};
+  for (const m of MUTANTS) for (const [suite, names] of Object.entries(m[3])) tests[suite] = [...new Set([...(tests[suite] ?? []), ...names])];
+  for (const o of runSuites((rel, src) => src, tests)) {
+    assert.equal(o.status, 0, o.output);
+    assert.equal(o.ran, tests[o.suite].length, `every targeted ${o.suite} test was selected`);
+  }
+});
+
+for (const [invariant, target, replacement, tests, extra] of MUTANTS) {
+  test(`mutant killed: ${invariant}`, () => {
+    const file = locate(target);
+    const extraFile = extra ? locate(extra[0]) : null;
+    const outcomes = runSuites((rel, src) => {
+      let out = rel === file ? src.replace(target, replacement) : src;
+      if (extra && rel === extraFile) out = out.replace(extra[0], extra[1]);
+      return out;
+    }, tests);
+    assert.ok(outcomes.every((o) => o.ran > 0), 'the targeted tests ran');
+    assert.ok(outcomes.some((o) => o.status !== 0), `the mutant survived — ${JSON.stringify(tests)} do not guard "${invariant}"\n${outcomes.map((o) => o.output.slice(-1500)).join('\n')}`);
+  });
+}

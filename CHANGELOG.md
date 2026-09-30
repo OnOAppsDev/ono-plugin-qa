@@ -4,6 +4,86 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- QA ledger foundation (lifecycle Stage 1): `scripts/qa-ledger.mjs`, a zero-dependency helper that is the only writer of `<qa-repo>/qa-ledger/`, plus `docs/qa-ledger-contract.md` and the Stage-1 boundary in `docs/qa-readiness-contract.md`.
+  - **Records:** immutable build records; append-only, hash-chained event streams for scopes (`feature:`, standalone `bug:`, `release:`) and execution runs (`smoke`, `functional`, `regression`, `retest`, `reproduction`), with results `pass`/`fail`/`blocked`/`not_run`.
+  - **Integrity:** in-run supersession for corrections, frozen terminal runs, referential-integrity validation.
+  - **Derived views:** builds, runs, case history, latest result. Nothing derivable is stored.
+  - **Test plans:** rows are referenced read-only by `<plan-folder>/<id>` with a row hash. Plans are never rewritten.
+  - **Scope:** foundation only. No command, agent, skill or template uses the ledger yet, and every existing flow, the test-plan format and the xlsx export are unchanged.
+  - **Tests:** `scripts/qa-ledger.test.mjs` (behavior, including an unchanged-xlsx golden check) and `scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+- Feature execution + smoke (lifecycle Stage 2), on top of the ledger, with no schema change:
+  - **Commands:**
+    - `/register-build` — an immutable build delivered to QA, tied to its feature scope.
+    - `/set-qa-scope` — required surfaces, devices/runtimes per surface, the approved test plan, per-surface exclusions, all QA-entered.
+    - `/define-smoke-suite` — a QA-authored, per-surface smoke suite at `smoke/<surface>/smoke-suite.md` with stable `S<n>` ids and retired-id tracking, per the new `templates/smoke-suite-template.md`.
+    - `/record-execution` — a manual smoke or functional run, walked case by case and persisted as each answer is given.
+  - **Smoke:** runs once per build and surface; FAIL, BLOCKED or NOT_RUN rejects the build for that surface.
+  - **Functional:** runs only against an approved plan attached to the scope, on a required surface and a declared device, once smoke passed or QA recorded a scope-specific override with a reason. `validate` re-checks the gate for every functional run.
+  - **Results:** a FAIL is only a result, and no bug is created. Results recorded against a plan row that later changed are reported as stale, not current.
+  - **Views:** `view smoke`, `view execution` (per-surface cases, pending/stale lists, device coverage, gate), `view run-cases`.
+  - **Contract:** two additive scope context fields (`exclusions`, `smoke_overrides`) and the `suite check` helper command.
+  - **Internal structure:** the helper is split into internal modules under `scripts/lib/qa-ledger/`. `qa-ledger.mjs` remains the single entry point and the only constructor of the write boundary.
+  - **Tests:** `scripts/qa-execution.test.mjs` (25), and mutation tests extended to cover the smoke gates.
+  - **Unchanged:** the existing planning commands, test-plan format and xlsx export.
+- Bug lifecycle (lifecycle Stage 3), on the same ledger, with no schema change and no second bug store:
+  - **Model:** a bug is its `bug:<id>` scope, with additive `bug.reported` / `bug.resolved` records, an optional `fixes_claimed` field on builds, and bug-only context fields (`severity`, `assignee`, `external_ref`, `evidence`, `linked_cases`).
+  - **Derived state:** `new`, `verification_blocked`, `assigned`, `fix_delivered`, `reopened`, `closed_verified`, `closed_not_reproducible`, `closed_duplicate`, `closed_wont_fix`, with the next action (`qa_verify` / `dev_fix` / `qa_retest` / none). It is replayed from the reproduction and re-test runs and fix claims, never stored.
+  - **Commands:**
+    - `/report-bug` — from a FAIL QA chose to report (inherits run, case, build, surface, device and feature; starts with Dev) or as a standalone bug with no feature, plan, spec or Figma (starts `new`).
+    - `/verify-bug` — REPRODUCED / NOT_REPRODUCIBLE / BLOCKED on a specific build and surface.
+    - `/retest-bug` — only after the fix build passed smoke on that surface (the same Stage 2 per-build gate, or its explicit override). PASS closes only when every affected surface passed on the fix build; FAIL reopens it back to Dev and requires a new fix build; BLOCKED changes nothing. A later fix claim supersedes a pending one, and the superseded build can no longer be re-tested.
+    - `/resolve-bug` — duplicate / wont_fix, with a person and a reason.
+    - `/register-build --fixes` — a fix claim that never closes a bug by itself.
+  - **Bug-owned case:** each bug has its repro / re-test case `bug:<id>#R1`, so standalone bugs need no plan. Links are many-to-many between bugs and test cases.
+  - **Views:** `view bug`, `view bugs`, `view case-bugs`, and a regenerated, never-authoritative `bugs/<id>/bug.md`.
+  - **Validation:** `validate` replays every transition (`INVALID_TRANSITION`).
+  - **No external writes:** trackers are only referenced (`external_ref`).
+  - **Smoke runs:** they record only their own suite's cases, so smoke never becomes bug evidence.
+  - **Tests:** `scripts/qa-bugs.test.mjs` (39), and mutation tests extended to the bug transitions, the close/reopen guards, the re-test smoke gate and fix-claim supersession.
+  - **Unchanged:** feature execution and smoke behavior.
+- Dev → QA handoff integration (lifecycle Stage 4). `/check-qa-coverage` now:
+  - **Finds the handoff deterministically:** Task Breakdown → `qa_handoff_link`, and Task Breakdown → `feature_analysis_link`. The breakdown is identified by its frontmatter, and the human is asked for a path only on `NEED_BREAKDOWN_PATH` / `NEED_HANDOFF_PATH`. The broken "starts with `# QA Handoff`" search is removed.
+  - **Gates on status:** only `ready-for-qa` is accepted, unless a human records an attributed draft override, which is persisted and shown in the report.
+  - **Checks the current section contract:** all ten producer sections, including `Build / Install / Testing Instructions` and `Pending Verification (owed to QA)`. This is documented once, in the new `docs/dev-handoff-contract.md`; the coverage agent and skill cite it instead of a stale 8-section list.
+  - **Keeps ownership separate:** QA-owned Pending Verification becomes QA debt on the feature scope, and accessibility `notRecorded` needs QA attention (never "covered"). Developer-owned Known Limitations / `VERIFY-4` debt stays developer context.
+  - **Binds identity:** the canonical Dev identity (feature, breakdown/handoff/analysis links, platform, device_type, surface, capability, build-instructions reference) is bound to the existing feature scope.
+  - **Makes the report machine-linkable:** the coverage report gets delimited frontmatter with that identity; its body and the Covered / Partially Covered / Gap methodology are unchanged.
+  - **Ledger changes:** `handoff resolve` / `handoff ingest` helper commands; additive scope fields `dev_handoff`, `handoff_overrides`; optional `why_not_automatable` / `owner` on `debt`.
+  - **Read-only on the code repo:** nothing there is ever written.
+  - **Tests:** `scripts/qa-handoff.test.mjs` (20), and 10 new mutants.
+- Project Knowledge + regression (lifecycle Stage 5), for feature and standalone-bug scopes alike.
+  - **Vendored verbatim:** the ecosystem's Project Knowledge contract (`docs/repo-knowledge-contract.md`, from the Inspector) and the Dev plugin's reader (`scripts/vendor/read-repo-knowledge.ts`). They're consumed through one QA module, `scripts/lib/qa-ledger/knowledge.mjs`, with the reader's own trusted / verifyOnUse / deriveLive semantics and no second freshness mechanism.
+  - **Capability identity:** by exact id, exact name or source path only. A Stage 4 binding is used as-is, and several matches are never auto-selected.
+  - **Candidates:** `regression candidates` lists the capability's first-degree relationships, with evidence always re-checked against the current source. Edges whose evidence fails are dropped from context; there's no transitive expansion and no scoring. Existing QA coverage (bound scopes' plan cases, bug scenarios, generated automation, Project Knowledge test evidence) is shown, or reported as unknown.
+  - **`/plan-regression` and `regression decide`:** QA's explicit decision is persisted as `regression_decisions`:
+    - required yes/no, never defaulted, always with a reason;
+    - every candidate included or excluded with a reason;
+    - existing cases from approved plans (or the bug's own `R1`);
+    - target builds and surfaces.
+  - **Regression runs:** Stage 1 runs of type `regression`, bound to the current decision, only on its targets (no carry-forward to a new build), only through the Stage 2 smoke gate, and only the selected cases. A FAIL stays a FAIL. `view regression` shows the status per target, and `validate` re-checks every regression run.
+  - **Planning isolation:** test planning and sync never consume Project Knowledge, and a repo without it plans regression manually.
+  - **Tests:** `scripts/qa-regression.test.mjs` (28), and 13 new mutants (first-degree guard, evidence re-check, manual decision, regression smoke gate, selected-case restriction, …).
+- QA readiness + sign-off (lifecycle Stage 6), specified in `docs/qa-readiness-contract.md`.
+  - **Deterministic verdict:** READY / READY_WITH_EXCEPTIONS / NOT_READY, computed only from the ledger. No Project Knowledge, Dev plugin, release tool or tracker is read.
+  - **Rules:** R1 smoke, R2 plan, R3 functional (including stale evidence), R4 bugs (blocking severities critical/major), R5 re-tests, R6 regression decision, R7 regression execution, R8 QA debt, R9 surface coverage. A standalone bug needs no plan. Automation never blocks.
+  - **Candidate build:** per surface, the latest smoke-passed build unless QA pins one (`readiness pin` / `unpin`).
+  - **Exceptions:** explicit and exact (`readiness except`: blocker id, kind, reason, approver, optional build). Only they make a verdict READY_WITH_EXCEPTIONS.
+  - **Debt discharge:** by an effective PASS (`readiness discharge`).
+  - **Sign-off:** `/qa-signoff` / `readiness signoff` pins the verdict and a fingerprint over every consumed source record: scope and linked-bug events, consumed runs, builds and plan content, with sign-offs and generated Markdown excluded. It goes stale automatically on any change; `view signoffs` lists validity and every stale sign-off.
+  - **Report:** `/qa-readiness` writes the deterministic `readiness/<kind>/<id>.md` report, with frontmatter per the contract and sections from the per-surface matrix to the Release Notes Input.
+  - **Release scopes:** only aggregate their members. There is no release artifact and no Release integration.
+  - **Ledger changes:** additive, managed context fields `candidate_builds`, `exceptions`, `debt_discharges`, `signoffs`; `MANAGED_FIELD` for a generic write to them.
+  - **Tests:** `scripts/qa-readiness.test.mjs` (27), and 24 new mutants (every rule, exception matching, the verdict, fingerprint coverage, sign-off validity).
+- QA readiness follow-up for Release integration (`qa_readiness_schema: 2`):
+  - **Release artifact:** a `release:<id>` scope renders the signable `readiness/release/<id>.md`. It has a Members table and aggregated blockers, exceptions, known issues, candidate builds (a member conflict on a surface blocks the release) and tested builds, and it goes stale automatically when any member changes.
+  - **Bug identity:** artifacts carry `dev_feature`, `qa_bug_id` and `external_ref`. Either bug identifier may be absent, and the contract states the matching rules a consumer follows.
+  - **Freshness token:** artifacts carry `freshness_token`, a derivation-free digest over the ledger records the verdict could read. The contract specifies how to recompute it, so a release tool can reject an artifact rendered from an outdated ledger. It uses no timestamps and needs no ledger change.
+  - **Artifact integrity:** every artifact ends its frontmatter with `artifact_integrity`, sha256 over the complete rendered artifact without that line. A consumer recomputes it and rejects an artifact edited after rendering. This check is separate from ledger freshness.
+  - **Tests:** `scripts/qa-release-readiness.test.mjs` (12), and 17 new mutants.
+
 ## [0.7.0] - 2026-08-25
 
 ### Added
