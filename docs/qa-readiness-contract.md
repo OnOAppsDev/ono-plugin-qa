@@ -1,6 +1,6 @@
-# QA Readiness Contract — boundary (Stages 1–4)
+# QA Readiness Contract — boundary (Stages 1–5)
 
-**Status: boundary only.** Stages 1–4 implement **no** readiness computation, no verdict, no sign-off, and no Release integration. Their views are operational only. This document fixes what later stages may rely on from the ledger (`docs/qa-ledger-contract.md`), so readiness can be added without reshaping the ledger.
+**Status: boundary only.** Stages 1–5 implement **no** readiness computation, no verdict, no sign-off, and no Release integration. Their views are operational only. This document fixes what later stages may rely on from the ledger (`docs/qa-ledger-contract.md`), so readiness can be added without reshaping the ledger.
 
 ## What a later stage will produce
 
@@ -33,6 +33,7 @@ Readiness will be **derived, never stored as authoritative state.** It will be c
 | Bugs linked to work | `bug:` scopes, `bug_ref`, result `bug_refs`, scope `result_refs` / `related_scopes` |
 | Bug state, severity, open re-tests, fix builds | Stage 3 `view bug` / `view bugs` (derived state, next action, pending re-test surfaces, fixed-in build). Severity is recorded only; which severities block is readiness's decision. |
 | Release contents | `release:` scope `members` |
+| Regression decision and its results | Stage 5 `regression_decisions` (explicit required/not required, reason, included/excluded candidates, cases, targets) and `view regression` per target |
 
 A standalone bug scope needs no plan; any rule about an approved plan applies to feature scopes only. Automation evidence, when a later stage imports it, is ordinary run evidence (`executor: automation:<tool>`). Automation availability never gates readiness by itself.
 
@@ -40,7 +41,6 @@ A standalone bug scope needs no plan; any rule about an approved plan applies to
 
 These are **not** implemented yet. A current helper rejects them as `UNKNOWN_EVENT_KIND`:
 
-- regression decisions;
 - exceptions / waivers and known issues;
 - QA sign-off.
 
@@ -48,4 +48,4 @@ These are **not** implemented yet. A current helper rejects them as `UNKNOWN_EVE
 - A sign-off will pin a fingerprint of the ledger records the verdict read, so any later record makes the sign-off stale. This reuses the ledger's hashes and adds no second freshness mechanism.
 - The readiness artifact path `<qa-repo>/readiness/<scope>.md` is reserved.
 
-Smoke suites and the smoke gate were reserved here and are now implemented by Stage 2, and bug lifecycle events by Stage 3 (`bug.reported`, `bug.resolved`). See `docs/qa-ledger-contract.md`.
+Smoke suites and the smoke gate were reserved here and are now implemented by Stage 2, bug lifecycle events by Stage 3 (`bug.reported`, `bug.resolved`), and regression decisions by Stage 5 (the `regression_decisions` field). See `docs/qa-ledger-contract.md`.

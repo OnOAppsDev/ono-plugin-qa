@@ -6,7 +6,7 @@
 
 import { fail } from './core.mjs';
 import { readPlan, readSmokeSuite, smokeSuitePath, isSmokePath } from './plans.mjs';
-import { orderedBuilds, runOrder, scopeBuildIds, requireScope } from './query.mjs';
+import { orderedBuilds, runOrder, scopeBuildIds, requireScope, findDecision } from './query.mjs';
 import { bugCase, bugCaseKey } from './bugs.mjs';
 
 // ---------- smoke ----------
@@ -308,6 +308,15 @@ export function viewRunCases(root, model, o) {
   let rows = [];
   if (h.execution_type === 'smoke') rows = readSmokeSuite(root, h.plan_refs[0].plan).rows;
   else for (const p of h.plan_refs) rows.push(...readPlan(root, p.plan).rows);
+  if (h.execution_type === 'regression') {
+    // Stage 5: only the cases QA selected in the run's regression decision, in decision order.
+    const decision = findDecision(model.scopes.get(h.scope), h.regression_decision);
+    const byKey = new Map(rows.map((r) => [r.case_key, r]));
+    const cases = decision.cases.map((k) => ({ case_key: k, section: byKey.get(k)?.section ?? 'Bug scenario' }));
+    const effective = new Map(run.results.filter((r) => r.superseded_by === null).map((r) => [r.case_key, r]));
+    const out = cases.map((r) => ({ case_key: r.case_key, section: r.section, result: effective.get(r.case_key)?.result ?? null, result_id: effective.get(r.case_key)?.result_id ?? null }));
+    return { run_id: h.run_id, type: h.execution_type, state: run.state, surface: h.surface, build_id: h.build_id, regression_decision: decision.id, cases: out, remaining: out.filter((c) => c.result === null).map((c) => c.case_key) };
+  }
   for (const ref of h.execution_type === 'smoke' ? [] : [...new Set([h.scope, h.bug_ref].filter(Boolean))]) {
     if (bugCase(model.scopes.get(ref))) rows.push({ case_key: bugCaseKey(ref), section: 'Bug scenario' });
     for (const c of model.scopes.get(ref)?.context.cases ?? []) rows.push({ case_key: `${ref}#${c.id}`, section: 'Scope cases' });

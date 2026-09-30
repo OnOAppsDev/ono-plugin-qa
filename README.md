@@ -87,6 +87,7 @@ claude --plugin-dir /path/to/ono-plugin-qa
 | `/verify-bug` | bug id, build id, surface | Records one reproduction attempt: REPRODUCED → Dev, NOT_REPRODUCIBLE → closed, BLOCKED → retry later |
 | `/retest-bug` | bug id, build id, surface | Re-tests the fix build: PASS on every affected surface closes the bug; FAIL reopens it back to Dev for a new fix build |
 | `/resolve-bug` | bug id, `duplicate`\|`wont_fix` | Closes an open bug by a recorded human decision with a reason |
+| `/plan-regression` | feature name or bug id, `--capability=`/`--path=` (optional) | Shows direct, evidence-checked regression candidates from Project Knowledge with existing QA coverage; QA decides (required or not, included/excluded with reasons, cases, target builds) and the decision is recorded. Regression then runs via `/record-execution … regression` |
 
 ## Pipeline
 
@@ -100,6 +101,7 @@ claude --plugin-dir /path/to/ono-plugin-qa
 | 3. Live verification (optional, as needed) | `/verify-automation-locators` | `appium-live-verification` | `automation-locator-verifier` |
 | 4. Execution (per delivered build) | `/register-build`, `/set-qa-scope`, `/define-smoke-suite`, `/record-execution` | — (helper-driven) | — |
 | 5. Bugs (as needed) | `/report-bug`, `/verify-bug`, `/retest-bug`, `/resolve-bug` | — (helper-driven) | — |
+| 6. Regression (QA decides) | `/plan-regression`, `/record-execution … regression` | — (helper-driven) | — |
 
 Phase 1 depends on nothing but a Figma link and/or a spec/LLD doc — it can run the moment a feature is designed/specified, in parallel with dev's implementation. A test plan must be approved via `/approve-qa-test-plan` before Phase 2 will run against it; `/sync-qa-test-plan` can be run any time beforehand (or after) to catch up with design/spec changes, and resets approval if it makes a substantive change. Phase 2 depends on both an approved Phase 1 test plan and the dev plugin's `qa-handoff-template.md` output for the same feature, so it only runs once dev has handed off. `/verify-automation-locators` is a separate, optional follow-up to Phase 3 — unlike every other command here, it needs a live simulator/device with the app running, so `/generate-automation-scripts` itself still works with nothing but the two repos, and this step is only run when someone actually has a device up.
 
@@ -147,4 +149,6 @@ Execution (Phase 4) runs on top of it, per delivered build: `/register-build`, t
 
 Bugs (Phase 5) use the same ledger. A bug is reported either from a FAIL QA chose to report (`/report-bug --from-run … --case …` — it starts with Dev) or as an existing standalone bug with no feature or plan (it starts `new`, and `/verify-bug` reproduces it on a build). Dev's fix arrives as a build registered with `--fixes bug:<id>`; that claim never closes anything. The fix build passes smoke on each surface first — the same per-build gate as feature execution — and then `/retest-bug` decides: PASS on every affected surface closes it as verified, FAIL reopens it and the next step is a new fix build, not another re-test. Duplicates and won't-fix are explicit human decisions (`/resolve-bug`). Each bug's state is derived from the ledger, and `bugs/<id>/bug.md` is a regenerated, read-only view of it; external trackers are referenced (`external_ref`), never written.
 
-Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-execution.test.mjs scripts/qa-bugs.test.mjs scripts/qa-ledger.mutation.test.mjs`.
+Regression (Phase 6) works for features and standalone bugs alike. Project Knowledge (the Inspector's `.ono/repo-knowledge.json`, read through the Dev plugin's reader vendored verbatim) resolves the capability by exact identity and suggests its **direct** neighbours, each with its re-checked evidence and any existing QA coverage. QA decides — required or not, which candidates are in or out and why, which existing cases, which builds — and only that decision runs, only after smoke passed on that build. Test planning never uses Project Knowledge, and a repo without it still plans regression manually. See `docs/qa-project-knowledge.md`.
+
+Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-execution.test.mjs scripts/qa-bugs.test.mjs scripts/qa-handoff.test.mjs scripts/qa-regression.test.mjs scripts/qa-ledger.mutation.test.mjs`.

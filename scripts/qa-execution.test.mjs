@@ -472,7 +472,8 @@ test('S2-18 manual execution works end to end with no automation present', () =>
 function sources() {
   const files = [path.join(HERE, 'qa-ledger.mjs')];
   const lib = path.join(HERE, 'lib', 'qa-ledger');
-  if (fs.existsSync(lib)) for (const f of fs.readdirSync(lib)) files.push(path.join(lib, f));
+  // Since Stage 5, lib/qa-ledger/knowledge.mjs is the one designated Project Knowledge consumer; no other module may touch it.
+  if (fs.existsSync(lib)) for (const f of fs.readdirSync(lib)) if (f !== 'knowledge.mjs') files.push(path.join(lib, f));
   return files.map((f) => [path.relative(PLUGIN_ROOT, f), fs.readFileSync(f, 'utf8')]);
 }
 

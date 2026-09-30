@@ -25,6 +25,8 @@ import { FIELDS, keyOf, retractKey, loadLedger, loadForWrite, loadForRead } from
 import { requireScope, requireBugScope, findCaseInsensitive } from './lib/qa-ledger/query.mjs';
 import { checkRunOpen, checkResultAdd, checkRunClose, checkContextValue, requireSmokeGate } from './lib/qa-ledger/execution.mjs';
 import { view } from './lib/qa-ledger/views.mjs';
+import { readKnowledge, knowledgeSummary, resolveCapability, directCandidates, coverageFor } from './lib/qa-ledger/knowledge.mjs';
+import { buildDecision, checkRegressionOpen, checkRegressionResult } from './lib/qa-ledger/regression.mjs';
 import { READY_STATUS, resolveCodeRepo, resolveHandoff } from './lib/qa-ledger/handoff.mjs';
 import { SEVERITIES, RESOLUTIONS, CLOSED, bugReport, bugCase, bugCaseKey, bugCaseHash, deriveBug, requireReportedBug, resolveCaseKey, caseScenario, checkBugRunOpen, checkBugResult, checkBugRunClose, checkFixClaims, renderBugMarkdown } from './lib/qa-ledger/bugs.mjs';
 
@@ -135,6 +137,13 @@ function prepareRunOpen(store, model, o) {
   let bugRef = o['bug-ref'] ? requireBugScope(model, o['bug-ref']) : null;
   if (!bugRef && scope.kind === 'bug') bugRef = scope.ref;
   if (BUG_REF_TYPES.includes(o.type) && !bugRef) fail('BUG_REF_REQUIRED', `${o.type} runs are about a bug — pass --bug-ref bug:<id>`);
+  let decision = null;
+  if (o.type === 'regression') {
+    // Stage 5: a regression run executes one QA decision; its plans come from that decision.
+    const r = checkRegressionOpen(model, scope.ref, { ...o, surface });
+    decision = r.decision;
+    o = { ...o, plan: r.plans };
+  } else if (o.decision) fail('INVALID_VALUE', '--decision applies only to regression runs');
   const planRefs = [];
   for (const p of o.plan ?? []) {
     const plan = readPlan(store.root, p);
@@ -145,6 +154,8 @@ function prepareRunOpen(store, model, o) {
   // A delivered fix build is re-tested only once the exact (build, surface) passed
   // smoke (or holds an explicit override) — the same Stage 2 gate functional runs use.
   if (o.type === 'retest') requireSmokeGate(model, scope.ref, build.build_id, surface);
+  // Regression runs go through the same per-build smoke gate (Stage 5).
+  if (o.type === 'regression') requireSmokeGate(model, scope.ref, build.build_id, surface);
   const at = now();
   const header = {
     kind: 'run.opened',
@@ -157,6 +168,7 @@ function prepareRunOpen(store, model, o) {
     executor: o.executor,
     plan_refs: planRefs,
     bug_ref: bugRef,
+    ...(decision ? { regression_decision: decision.id } : {}),
   };
   const runId = `${o.type}-${at.replace(/[-:]/g, '').replace(/\.\d{3}/, '')}-${sha(canonical({ ...header, at })).slice(7, 15)}`;
   if (model.runs.has(runId)) fail('DUPLICATE_RUN', `run ${runId} already exists`);
@@ -220,6 +232,7 @@ function cmdResultAdd(store, o) {
   const caseRef = resolveCase(store, model, run, o.case);
   checkResultAdd(model, run, o.case);
   checkBugResult(model, run, o.case, o.result);
+  checkRegressionResult(model, run, o.case);
   const seq = run.results.length + 1;
   const records = [run.header, ...run.results.map(({ superseded_by, ...r }) => r)];
   const rec = appendEvent(store, ['runs', `${o.run}.jsonl`], records, {
@@ -503,6 +516,80 @@ function cmdHandoffIngest(store, o) {
   };
 }
 
+// ---------- Project Knowledge + regression (Stage 5) ----------
+
+function knowledgeFor(store, o, bound) {
+  const code = o['code-repo'] ? resolveCodeRepo(o['code-repo'], store.root) : null;
+  const k = readKnowledge(code, { capability: o.capability ?? bound ?? undefined, paths: o.path, surface: o.surface });
+  return { code, k };
+}
+
+function cmdKnowledgeLookup(store, o) {
+  if (!o.capability && !o.path && !o.surface) fail('MISSING_ARGUMENT', 'look up by --capability <id or exact name>, --path <repo path> or --surface <id>');
+  const { k } = knowledgeFor(store, o, null);
+  const lookup = k.query?.capability ? (({ context, ...l }) => l)(k.query.capability) : null;
+  return { knowledge: knowledgeSummary(k), lookup, surface: k.query?.surface ?? null };
+}
+
+function scopeCandidates(store, model, scope, o) {
+  const bound = scope.context.capability ?? scope.context.dev_handoff?.capability ?? null;
+  const { k } = knowledgeFor(store, o, bound);
+  const capability = resolveCapability(k, { bound, explicit: o.capability, paths: o.path });
+  const found = capability.status === 'found';
+  const direct = found ? directCandidates(k, capability.id) : { candidates: [], dropped: [], manual: [] };
+  return { k, capability, direct };
+}
+
+// Read-only: what Project Knowledge suggests for a scope. Nothing is recorded.
+function cmdRegressionCandidates(store, o) {
+  const model = loadForRead(store);
+  const s = requireScope(model, o.scope);
+  const scope = model.scopes.get(s.ref);
+  const { k, capability, direct } = scopeCandidates(store, model, scope, o);
+  const knowledge = knowledgeSummary(k);
+  const note = !knowledge.available || knowledge.capabilities === 'deriveLive'
+    ? 'Project Knowledge is not available for capabilities — plan regression manually (name candidates with --candidate).'
+    : capability.status === 'found'
+      ? 'First-degree context only: a relationship is not proof of impact. QA decides what, if anything, regression covers.'
+      : capability.status === 'ambiguous'
+        ? 'Several capabilities match — QA picks one (bind it with scope event --field capability); nothing was chosen.'
+        : 'No capability resolved — bind one by exact id, name or path, or plan regression manually.';
+  return {
+    scope: s.ref,
+    knowledge,
+    capability,
+    candidates: direct.candidates.map((c) => ({ ...c, existing_coverage: coverageFor(store.root, model, c.capability, k) })),
+    dropped_relationships: direct.dropped,
+    manual_review: direct.manual,
+    capability_coverage: capability.id ? coverageFor(store.root, model, capability.id, k) : null,
+    note,
+  };
+}
+
+// Records QA's explicit regression decision on the scope.
+function cmdRegressionDecide(store, o) {
+  const s = parseScopeRef(o.scope);
+  const model = loadForWrite(store, s.ref);
+  if (!model.scopes.has(s.ref)) fail('UNKNOWN_SCOPE', `scope ${s.ref} does not exist`);
+  const scope = model.scopes.get(s.ref);
+  let capabilityId = null;
+  let pkCandidates = [];
+  let knowledge = null;
+  if (o['code-repo']) {
+    const { k, capability, direct } = scopeCandidates(store, model, scope, o);
+    knowledge = (({ available, freshness, capabilities }) => ({ available, freshness, capabilities }))(knowledgeSummary(k));
+    if (capability.status === 'ambiguous') fail('CAPABILITY_AMBIGUOUS', `several capabilities match "${o.capability ?? capability.id}" — QA picks one; nothing is chosen`, { matches: capability.matches });
+    if (o.capability && capability.status === 'not-found') fail('CAPABILITY_NOT_FOUND', `no capability has id or exact name "${o.capability}"`);
+    capabilityId = capability.id;
+    pkCandidates = direct.candidates.map((c) => c.capability);
+  } else {
+    capabilityId = o.capability ?? scope.context.capability ?? null;
+  }
+  const value = buildDecision(store.root, model, scope, o, { capability: capabilityId, pkCandidates, knowledge });
+  appendEvent(store, ['scopes', s.kind, `${s.id}.jsonl`], scope.events, { kind: 'context.add', field: 'regression_decisions', value, by: o.by });
+  return { scope: s.ref, decision: value };
+}
+
 const viewCmd = (what) => (s, o) => view(s.root, loadForRead(s), what, o);
 
 // ---------- CLI ----------
@@ -513,16 +600,16 @@ const COMMANDS = {
   'build add': { req: ['id', 'surfaces', 'registered-by'], opts: ['version', 'source', 'related-scope', 'fixes'], run: cmdBuildAdd },
   'scope create': { req: ['scope', 'created-by'], opts: ['title'], run: cmdScopeCreate },
   'scope event': { req: ['scope', 'op', 'field', 'value', 'by'], opts: ['reason'], run: cmdScopeEvent },
-  'run open': { req: ['type', 'scope', 'build', 'surface', 'device', 'executor'], opts: ['os-runtime', 'plan', 'bug-ref'], run: cmdRunOpen },
+  'run open': { req: ['type', 'scope', 'build', 'surface', 'device', 'executor'], opts: ['os-runtime', 'plan', 'bug-ref', 'decision'], run: cmdRunOpen },
   'run close': { req: ['run'], opts: [], run: (s, o) => cmdRunEnd(s, o, 'run.closed') },
   'run abort': { req: ['run'], opts: ['reason'], run: (s, o) => cmdRunEnd(s, o, 'run.aborted') },
-  'result add': { req: ['run', 'case', 'result'], opts: ['notes', 'evidence', 'bug', 'supersedes'], run: cmdResultAdd },
+  'result add': { single: ['case'], req: ['run', 'case', 'result'], opts: ['notes', 'evidence', 'bug', 'supersedes'], run: cmdResultAdd },
   'view scope': { req: ['scope'], opts: [], run: viewCmd('scope') },
   'view builds': { opts: ['scope', 'surface'], run: viewCmd('builds') },
   'view latest-build': { req: ['surface'], opts: ['scope'], run: viewCmd('latest-build') },
   'view runs': { opts: ['scope', 'build'], run: viewCmd('runs') },
-  'view case-history': { req: ['case'], opts: ['surface', 'scope'], run: viewCmd('case-history') },
-  'view latest-result': { req: ['case', 'surface'], opts: ['scope'], run: viewCmd('latest-result') },
+  'view case-history': { single: ['case'], req: ['case'], opts: ['surface', 'scope'], run: viewCmd('case-history') },
+  'view latest-result': { single: ['case'], req: ['case', 'surface'], opts: ['scope'], run: viewCmd('latest-result') },
   'view smoke': { req: ['build'], opts: ['surface'], run: viewCmd('smoke') },
   'view execution': { req: ['scope'], opts: ['surface'], run: viewCmd('execution') },
   'view run-cases': { req: ['run'], opts: [], run: viewCmd('run-cases') },
@@ -536,18 +623,22 @@ const COMMANDS = {
     },
   },
   'suite check': { req: ['suite'], opts: [], ledgerless: true, run: cmdSuiteCheck },
-  'bug report': { req: ['title', 'severity', 'by'], opts: ['id', 'description', 'step', 'expected', 'actual', 'surfaces', 'affected-device', 'found-in-build', 'external-ref', 'evidence', 'linked-case', 'related-scope', 'from-run', 'case'], run: cmdBugReport },
+  'bug report': { single: ['case'], req: ['title', 'severity', 'by'], opts: ['id', 'description', 'step', 'expected', 'actual', 'surfaces', 'affected-device', 'found-in-build', 'external-ref', 'evidence', 'linked-case', 'related-scope', 'from-run', 'case'], run: cmdBugReport },
   'bug verify': { single: ['bug'], req: ['bug', 'build', 'surface', 'device', 'executor', 'outcome'], opts: ['os-runtime', 'notes', 'evidence'], run: (s, o) => cmdBugRun(s, o, 'reproduction') },
   'bug retest': { single: ['bug'], req: ['bug', 'build', 'surface', 'device', 'executor', 'outcome'], opts: ['os-runtime', 'notes', 'evidence'], run: (s, o) => cmdBugRun(s, o, 'retest') },
   'bug resolve': { single: ['bug'], req: ['bug', 'resolution', 'reason', 'by'], opts: ['reference'], run: cmdBugResolve },
   'bug render': { single: ['bug'], req: ['bug'], opts: [], run: (s, o) => ({ rendered: renderBug(s, requireReportedBug(loadForRead(s), o.bug).bug) }) },
   'view bug': { single: ['bug'], req: ['bug'], opts: [], run: viewCmd('bug') },
   'view bugs': { opts: ['scope', 'state'], run: viewCmd('bugs') },
-  'view case-bugs': { req: ['case'], opts: [], run: viewCmd('case-bugs') },
+  'view case-bugs': { single: ['case'], req: ['case'], opts: [], run: viewCmd('case-bugs') },
+  'knowledge lookup': { req: ['code-repo'], opts: ['capability', 'path', 'surface'], ledgerless: true, run: cmdKnowledgeLookup },
+  'regression candidates': { req: ['scope'], opts: ['code-repo', 'capability', 'path'], run: cmdRegressionCandidates },
+  'regression decide': { req: ['scope', 'required', 'reason', 'by'], opts: ['code-repo', 'capability', 'path', 'candidate', 'include', 'exclude', 'case', 'target'], run: cmdRegressionDecide },
+  'view regression': { req: ['scope'], opts: [], run: viewCmd('regression') },
   'handoff resolve': { req: ['code-repo'], opts: ['scope', 'feature', 'breakdown', 'handoff'], ledgerless: true, run: cmdHandoffResolve },
   'handoff ingest': { req: ['scope', 'code-repo', 'by'], opts: ['feature', 'breakdown', 'handoff', 'override-by', 'override-reason'], run: cmdHandoffIngest },
 };
-const REPEATABLE = new Set(['plan', 'evidence', 'bug', 'related-scope', 'fixes', 'step', 'linked-case', 'affected-device']);
+const REPEATABLE = new Set(['plan', 'evidence', 'bug', 'related-scope', 'fixes', 'step', 'linked-case', 'affected-device', 'path', 'candidate', 'include', 'exclude', 'case', 'target']);
 
 function parseArgs(argv) {
   const words = [];

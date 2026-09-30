@@ -223,10 +223,12 @@ test('05 a run must reference an existing scope, build, build surface and bug', 
 test('06 every future execution type opens structurally', () => {
   const w = seeded();
   w.ok('scope', 'create', '--scope', 'bug:BUG-27', '--created-by', 'dana');
+  // Stage 5: a regression run executes a recorded QA regression decision.
+  w.ok('regression', 'decide', '--scope', 'feature:checkout', '--by', 'dana', '--required', 'yes', '--reason', 'Structural ledger test', '--case', 'checkout/TC1', '--target', '104@android');
   const types = {
     smoke: [],
     functional: [],
-    regression: [],
+    regression: ['--decision', 'RD-1'],
     retest: ['--bug-ref', 'bug:BUG-27'],
     reproduction: ['--bug-ref', 'bug:BUG-27'],
   };
@@ -442,7 +444,9 @@ test('14 existing QA flows are untouched: xlsx export is identical and no old fl
   // pre-existing command, agent, skill and template must not.
   const LEDGER_WIRED = new Set(['commands/register-build.md', 'commands/set-qa-scope.md', 'commands/define-smoke-suite.md', 'commands/record-execution.md', 'templates/smoke-suite-template.md', 'commands/report-bug.md', 'commands/verify-bug.md', 'commands/retest-bug.md', 'commands/resolve-bug.md',
     // Stage 4 binds the Dev handoff into the ledger through /check-qa-coverage, by design.
-    'commands/check-qa-coverage.md']);
+    'commands/check-qa-coverage.md',
+    // Stage 5 records regression decisions in the ledger.
+    'commands/plan-regression.md']);
   for (const dir of ['commands', 'agents', 'skills', 'templates']) {
     for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, dir), { recursive: true })) {
       const p = path.join(PLUGIN_ROOT, dir, f);

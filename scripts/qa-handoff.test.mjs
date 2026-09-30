@@ -358,7 +358,8 @@ test('S4-16 Stage 1–3 ledger flows keep working on a handoff-bound scope', () 
 });
 
 function sources() {
-  const files = [path.join(HERE, 'qa-ledger.mjs'), ...fs.readdirSync(path.join(HERE, 'lib', 'qa-ledger')).map((f) => path.join(HERE, 'lib', 'qa-ledger', f))];
+  // Since Stage 5, lib/qa-ledger/knowledge.mjs is the one designated Project Knowledge consumer; no other module may touch it.
+  const files = [path.join(HERE, 'qa-ledger.mjs'), ...fs.readdirSync(path.join(HERE, 'lib', 'qa-ledger')).filter((f) => f !== 'knowledge.mjs').map((f) => path.join(HERE, 'lib', 'qa-ledger', f))];
   return files.map((f) => [path.relative(PLUGIN_ROOT, f), fs.readFileSync(f, 'utf8')]);
 }
 
@@ -371,10 +372,11 @@ test('S4-17 no Project Knowledge reader is added', () => {
   for (const [file, text] of sources()) for (const needle of ['repo-knowledge', 'docs/project', 'capabilityRelationships']) assert.ok(!text.includes(needle), `${file}: ${needle}`);
 });
 
+// Regression arrived in Stage 5; readiness and sign-off are still absent.
 test('S4-18 no regression logic and S4-19 no readiness logic are added', () => {
   const w = withScope();
-  for (const cmd of [['regression'], ['readiness'], ['signoff'], ['view', 'readiness'], ['view', 'regression']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--scope', 'feature:checkout');
-  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/regression|readiness|sign-?off|release/i.test(name), name);
+  for (const cmd of [['readiness'], ['signoff'], ['view', 'readiness']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--scope', 'feature:checkout');
+  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/readiness|sign-?off|release/i.test(name), name);
   const out = JSON.stringify(ingest(w, '--feature', 'checkout'));
   assert.ok(!/READY_WITH|verdict|NOT_READY/.test(out));
 });

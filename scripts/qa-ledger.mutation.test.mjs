@@ -18,8 +18,9 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.join('lib', 'qa-ledger');
-const SOURCES = ['qa-ledger.mjs', ...fs.readdirSync(path.join(HERE, LIB)).map((f) => path.join(LIB, f))];
-const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs'), s4: path.join(HERE, 'qa-handoff.test.mjs') };
+// The vendored Project Knowledge reader is copied with every mutant (never mutated) so Stage 5 can run.
+const SOURCES = ['qa-ledger.mjs', ...fs.readdirSync(path.join(HERE, LIB)).map((f) => path.join(LIB, f)), path.join('vendor', 'read-repo-knowledge.ts')];
+const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs'), s4: path.join(HERE, 'qa-handoff.test.mjs'), s5: path.join(HERE, 'qa-regression.test.mjs') };
 
 // [invariant, exact source text, replacement, tests that must catch it ({ suite: [test-name prefixes] })]
 const MUTANTS = [
@@ -104,6 +105,20 @@ const MUTANTS = [
     { s4: ['S4-20'] },
     ["if (!fs.realpathSync(abs).startsWith(root + path.sep)) fail('PATH_OUTSIDE_CODE_REPO'", "if (false) fail('PATH_OUTSIDE_CODE_REPO'"],
   ],
+  // ---- Stage 5: Project Knowledge + regression ----
+  ['relationships stay first-degree', 'const edges = (k.capabilityRelationships ?? []).filter((e) => e.from === capId || e.to === capId); // invariant:first-degree-only', 'const edges = k.capabilityRelationships ?? [];', { s5: ['S5-08'] }],
+  ['evidence is always re-checked against the current source', "args.push('--verify'); // invariant:always-verify", '// verify removed', { s5: ['S5-07', 'S5-10'] }],
+  ['failed evidence is never presented as context', "if (rel.verification.status !== 'verified') { // invariant:evidence-verified", 'if (false) {', { s5: ['S5-10'] }],
+  ['an ambiguous capability is never auto-selected', "if (lookup.status === 'found') return { id: lookup.matches[0].id", 'if (lookup.matches.length) return { id: lookup.matches[0].id', { s5: ['S5-06'] }],
+  ['regression is never required by default', "if (!['yes', 'no'].includes(o.required)) fail('INVALID_VALUE'", "if (false) fail('INVALID_VALUE'", { s5: ['S5-13'] }],
+  ['every candidate is explicitly included or excluded', "if (unaddressed.length) fail('UNADDRESSED_CANDIDATE'", "if (false) fail('UNADDRESSED_CANDIDATE'", { s5: ['S5-11'] }],
+  ['an excluded candidate needs a reason', "if (!reason) fail('MISSING_ARGUMENT', `--exclude", "if (false) fail('MISSING_ARGUMENT', `--exclude", { s5: ['S5-15'] }],
+  ['regression runs wait for the smoke gate of their build', "if (o.type === 'regression') requireSmokeGate(", 'if (false) requireSmokeGate(', { s5: ['S5-20'] }],
+  ['regression records only the selected cases', "if (!decision.cases.includes(caseKey)) fail('CASE_NOT_SELECTED'", "if (false) fail('CASE_NOT_SELECTED'", { s5: ['S5-21'] }],
+  ['regression evidence never carries to another build', 'if (!decision.targets.some((t) => t.build_id === o.build && t.surface === o.surface)) fail(', 'if (false) fail(', { s5: ['S5-23'] }],
+  ['only the current decision can be executed', "if (!current || current.id !== decision.id) fail('REGRESSION_DECISION_SUPERSEDED'", "if (false) fail('REGRESSION_DECISION_SUPERSEDED'", { s5: ['S5-23'] }],
+  ['validate refuses regression outside its decision', "if (!decision.required || !onTarget || strays.length) errors.push({ code: 'REGRESSION_OUTSIDE_DECISION'", "if (false) errors.push({ code: 'REGRESSION_OUTSIDE_DECISION'", { s5: ['S5-29'] }],
+  ['validate re-derives the smoke gate for every regression run', 'if (!gateHeld) errors.push', 'if (false) errors.push', { s5: ['S5-30'] }],
   ['validate replays every bug transition', 'errors.push(...deriveBug(model, scope.ref).violations);', '', { s3: ['S3-26'] }],
   ['execution views count only closed functional runs', "r.header.execution_type === 'functional' && r.state === 'closed'", "r.header.execution_type === 'functional'", { s2: ['S2-11', 'S2-14'] }],
 ];

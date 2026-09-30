@@ -35,6 +35,15 @@ export function requireBugScope(model, ref) {
   if (!model.scopes.has(s.ref)) fail('UNKNOWN_SCOPE', `bug scope ${s.ref} does not exist`);
   return s.ref;
 }
+// Regression decisions on a scope (Stage 5): the active ones (retractions applied), or
+// with `all`, every decision ever recorded, in order.
+export function decisionsOf(scope, { all = false } = {}) {
+  if (!scope) return [];
+  if (!all) return scope.context.regression_decisions ?? [];
+  return scope.events.filter((e) => e.kind === 'context.add' && e.field === 'regression_decisions').map((e) => e.value);
+}
+export const findDecision = (scope, id) => decisionsOf(scope, { all: true }).find((d) => d.id === id) ?? null;
+
 export function findCaseInsensitive(names, name) {
   return names.some((n) => n.toLowerCase() === name.toLowerCase());
 }

@@ -1,6 +1,6 @@
 # QA Ledger Contract
 
-**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke), 3 (bug lifecycle), 4 (Dev → QA handoff)**
+**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke), 3 (bug lifecycle), 4 (Dev → QA handoff), 5 (Project Knowledge + regression)**
 Writer: `scripts/qa-ledger.mjs` — the **only** component that writes the ledger.
 Readers: this plugin's later lifecycle stages (execution, bugs, regression, readiness).
 
@@ -397,6 +397,47 @@ A scope bound to one Dev feature refuses another (`IDENTITY_CONFLICT`).
 
 Discharging debt is not part of Stage 4.
 
+## Stage 5 — Project Knowledge + regression
+
+Project Knowledge is consumed only through `scripts/lib/qa-ledger/knowledge.mjs`, which runs the vendored reader. The rules are in [`docs/qa-project-knowledge.md`](qa-project-knowledge.md) and the vendored [`docs/repo-knowledge-contract.md`](repo-knowledge-contract.md). Regression lives in `scripts/lib/qa-ledger/regression.mjs`.
+
+**Planning isolation.** Test-plan authoring and sync never consume Project Knowledge.
+
+### Regression decision (additive context field, any scope kind)
+
+| Field | Op | Value |
+|---|---|---|
+| `regression_decisions` | add, keyed `id` | `{ id: RD-<n>, required: bool, reason, capability, candidates[], included[], excluded[{capability, reason}], cases[], targets[{build_id, surface}], knowledge: {available, freshness, capabilities} \| null, decided_by }`. `decided_at` is the event's `at`. |
+
+- **`required` is explicit.** It's `yes` or `no`, never defaulted, and `reason` is always required.
+- **`candidates`** are the capability's first-degree neighbours whose evidence still holds (from Project Knowledge, when available), plus any QA adds manually (`--candidate`).
+  - **Every** candidate is either included or excluded with a reason (`UNADDRESSED_CANDIDATE`).
+  - Candidates never become scope by themselves.
+- **"Not required"** selects no cases, targets or inclusions. **"Required"** selects at least one case and one target.
+- **`cases`** are existing cases only:
+  - plan cases (`<plan-folder>/<id>`) from approved plans, from any feature;
+  - for a bug scope, its own `bug:<id>#R1`.
+
+  Smoke cases and other scopes' bug cases are refused.
+- **`targets`** are registered builds shipping the surface.
+- The **current** decision is the last active one. Earlier decisions stay in history, and a newer one supersedes them (`REGRESSION_DECISION_SUPERSEDED` for the old id).
+
+### Regression runs (Stage 1 run model, type `regression`)
+
+A regression run's header carries `regression_decision` (additive; present on regression runs only).
+
+To open one, all of the following must hold:
+- the decision is the scope's current decision, and `required` (`REGRESSION_DECISION_REQUIRED` / `UNKNOWN_DECISION` / `REGRESSION_NOT_REQUIRED`);
+- (build, surface) is one of its targets. Evidence never carries to another build (`REGRESSION_TARGET_MISMATCH`).
+- the Stage 2 smoke gate is open for that exact (build, surface) (`SMOKE_GATE_CLOSED`);
+- the run references exactly the decision's plans (`REGRESSION_PLAN_MISMATCH`).
+
+**Results** may be recorded only for the decision's cases (`CASE_NOT_SELECTED`). A FAIL is only a result; a bug is reported through Stage 3 only if QA decides to.
+
+**Validation.** `validate` re-checks every regression run: its decision exists, and it stays inside that decision's targets and cases (`REGRESSION_OUTSIDE_DECISION`). It also checks that the gate was held when the run opened (`GATE_NOT_HELD`).
+
+`view regression --scope` shows the current decision (with `decided_at`), the full history, and, per target, the gate, runs and case statuses (`pass` / `fail` / `blocked` / `not_run` / `stale` / `pending`). `regression candidates --scope` is read-only and records nothing.
+
 ## Versioning and compatibility
 
 - `qa_ledger_schema: 1`. The helper refuses any other value (`UNSUPPORTED_SCHEMA`); it does not guess at a newer shape.
@@ -435,6 +476,11 @@ bug verify    --bug --build --surface --device --executor --outcome reproduced|n
 bug retest    --bug --build --surface --device --executor --outcome pass|fail|blocked
 bug resolve   --bug --resolution duplicate|wont_fix --reason --by [--reference]
 bug render    --bug
+knowledge lookup --code-repo (--capability | --path… | --surface)   (read-only; Stage 5)
+regression candidates --scope [--code-repo] [--capability] [--path]…   (read-only; Stage 5)
+regression decide --scope --required yes|no --reason --by [--code-repo] [--capability] [--candidate]… [--include]… [--exclude "<id>=<why>"]… [--case]… [--target <build>@<surface>]…   (Stage 5)
+view regression --scope   (Stage 5)
+run open --type regression … --decision RD-<n>   (Stage 5)
 handoff resolve --code-repo [--scope] [--feature] [--breakdown] [--handoff]   (read-only; Stage 4)
 handoff ingest  --scope --code-repo --by [--feature] [--breakdown] [--handoff] [--override-by --override-reason]   (Stage 4)
 plan rows     --plan <qa-repo-relative path>        (read-only; needs no ledger)
@@ -443,6 +489,6 @@ suite check   --suite smoke/<surface>/smoke-suite.md (read-only; needs no ledger
 
 `QA_LEDGER_NOW=<ISO>` pins the clock. It exists for deterministic tests and must not be set in normal use.
 
-Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior), `node --test scripts/qa-bugs.test.mjs` (Stage 3 behavior), `node --test scripts/qa-handoff.test.mjs` (Stage 4 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior), `node --test scripts/qa-bugs.test.mjs` (Stage 3 behavior), `node --test scripts/qa-handoff.test.mjs` (Stage 4 behavior), `node --test scripts/qa-regression.test.mjs` (Stage 5 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
 
 Implementation: `scripts/qa-ledger.mjs` is the single CLI entry point and the only place the write boundary (`Store`, in `scripts/lib/qa-ledger/store.mjs`) is constructed. The internal modules under `scripts/lib/qa-ledger/` parse, validate and derive; none of them writes to disk — `store.mjs` is the only module with file writes, including the one derived-view writer.

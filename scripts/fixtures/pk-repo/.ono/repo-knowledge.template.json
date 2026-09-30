@@ -1,0 +1,39 @@
+{
+  "repoKnowledgeSchemaVersion": 1,
+  "producedBy": { "plugin": "ono-project-inspector", "version": "0.11.0" },
+  "generatedAt": "2026-09-01T00:00:00.000Z",
+  "fingerprint": { "gitHead": "__HEAD__", "knowledgeHead": "__HEAD__", "artifacts": {} },
+  "coverage": { "stack": "populated", "commands": "populated", "structure": "unknown", "inventory": "unknown", "conventions": "unknown", "integrations": "unknown", "auditTopics": "unknown", "surfaces": "populated", "capabilities": "populated" },
+  "stack": { "languages": ["TypeScript"], "frameworks": ["React Native"], "platformHints": ["react-native"], "runtimeTooling": ["Metro"], "packageManagers": ["yarn"] },
+  "commands": { "install": "yarn", "run": "yarn start", "test": "yarn test", "build": null },
+  "structure": { "repositoryTree": null, "keyModules": null, "entryPoints": null },
+  "documents": {
+    "claudeMd": { "path": "CLAUDE.md", "exists": false, "anchors": [], "surfaceAnchors": {} },
+    "auditMd": { "path": "AUDIT.md", "exists": false, "anchors": [], "surfaceAnchors": {} },
+    "capabilities": { "path": "docs/project/capabilities.md", "exists": false, "anchors": [], "surfaceAnchors": {} }
+  },
+  "auditTopics": [],
+  "surfaces": [
+    { "id": "mobile-app", "platform": "react-native", "formFactor": "handheld", "buildSelector": null, "sourceRoots": ["src/"], "sharedWith": [], "packaging": null, "minimumRuntime": null, "evidence": ["src/checkout/PayButton.tsx"] },
+    { "id": "tv-app", "platform": "android", "formFactor": "tv", "buildSelector": null, "sourceRoots": ["src/player", "src/home"], "sharedWith": [], "packaging": null, "minimumRuntime": null, "evidence": ["src/player/Player.tsx"] }
+  ],
+  "sharedCode": [],
+  "capabilities": [
+    { "id": "cart", "name": "Cart", "anchor": "docs/project/capabilities.md#capability-cart", "surfaceScope": "subset", "surfaces": ["mobile-app"], "sourceRoots": [{ "path": "src/cart", "surface": null }], "entryPoints": ["src/cart/CartScreen.tsx"], "components": [], "services": [], "routes": [], "dataDependencies": [], "stateOwnership": ["src/cart/CartScreen.tsx::useCart"], "tests": [], "evidence": ["src/cart/CartScreen.tsx"], "relationships": ["cart:shares_state_with:checkout-payments"] },
+    { "id": "checkout-payments", "name": "Checkout Payments", "anchor": "docs/project/capabilities.md#capability-checkout-payments", "surfaceScope": "subset", "surfaces": ["mobile-app"], "sourceRoots": [{ "path": "src/checkout", "surface": null }], "entryPoints": ["src/checkout/PayButton.tsx"], "components": [], "services": [], "routes": [], "dataDependencies": [], "stateOwnership": [], "tests": [], "evidence": ["src/checkout/PayButton.tsx"], "relationships": ["cart:shares_state_with:checkout-payments", "checkout-payments:depends_on:payment-service", "checkout-payments:navigates_to:profile", "checkout-payments:related_to:wallet"] },
+    { "id": "home-rows", "name": "Home Rows", "anchor": "docs/project/capabilities.md#capability-home-rows", "surfaceScope": "subset", "surfaces": ["tv-app"], "sourceRoots": [{ "path": "src/home", "surface": null }], "entryPoints": ["src/home/HomeRows.tsx"], "components": [], "services": [], "routes": [], "dataDependencies": [], "stateOwnership": [], "tests": [], "evidence": ["src/home/HomeRows.tsx"], "relationships": ["home-rows:navigates_to:playback"] },
+    { "id": "mini-cart", "name": "cart", "anchor": "docs/project/capabilities.md#capability-mini-cart", "surfaceScope": "subset", "surfaces": ["mobile-app"], "sourceRoots": [{ "path": "src/minicart", "surface": null }], "entryPoints": [], "components": [], "services": [], "routes": [], "dataDependencies": [], "stateOwnership": [], "tests": [], "evidence": ["src/minicart/MiniCart.tsx"], "relationships": [] },
+    { "id": "payment-service", "name": "Payment Service", "anchor": "docs/project/capabilities.md#capability-payment-service", "surfaceScope": "subset", "surfaces": ["mobile-app"], "sourceRoots": [{ "path": "src/payments", "surface": null }], "entryPoints": [], "components": [], "services": ["src/payments/paymentService.ts"], "routes": [], "dataDependencies": [], "stateOwnership": [], "tests": ["src/payments/paymentService.test.ts"], "evidence": ["src/payments/paymentService.ts"], "relationships": ["checkout-payments:depends_on:payment-service", "payment-service:used_by:profile"] },
+    { "id": "playback", "name": "Video Playback", "anchor": "docs/project/capabilities.md#capability-playback", "surfaceScope": "subset", "surfaces": ["tv-app"], "sourceRoots": [{ "path": "src/player", "surface": null }], "entryPoints": ["src/player/Player.tsx"], "components": [], "services": [], "routes": [], "dataDependencies": [], "stateOwnership": [], "tests": [], "evidence": ["src/player/Player.tsx::resumePlayback"], "relationships": ["home-rows:navigates_to:playback"] },
+    { "id": "profile", "name": "Profile", "anchor": "docs/project/capabilities.md#capability-profile", "surfaceScope": "subset", "surfaces": ["mobile-app"], "sourceRoots": [{ "path": "src/profile", "surface": null }], "entryPoints": ["src/profile/ProfileScreen.tsx"], "components": [], "services": [], "routes": [], "dataDependencies": [], "stateOwnership": [], "tests": [], "evidence": ["src/profile/ProfileScreen.tsx"], "relationships": ["checkout-payments:navigates_to:profile", "payment-service:used_by:profile"] },
+    { "id": "wallet", "name": "Wallet", "anchor": "docs/project/capabilities.md#capability-wallet", "surfaceScope": "subset", "surfaces": ["mobile-app"], "sourceRoots": [{ "path": "src/wallet", "surface": null }], "entryPoints": ["src/wallet/WalletScreen.tsx"], "components": [], "services": [], "routes": [], "dataDependencies": [], "stateOwnership": [], "tests": [], "evidence": ["src/wallet/WalletScreen.tsx"], "relationships": ["checkout-payments:related_to:wallet"] }
+  ],
+  "capabilityRelationships": [
+    { "id": "cart:shares_state_with:checkout-payments", "from": "cart", "type": "shares_state_with", "to": "checkout-payments", "evidenceKind": "shared-state", "evidence": ["src/cart/CartScreen.tsx::useCart", "src/checkout/PayButton.tsx::useCart"], "anchor": "docs/project/capabilities.md#relationships" },
+    { "id": "checkout-payments:depends_on:payment-service", "from": "checkout-payments", "type": "depends_on", "to": "payment-service", "evidenceKind": "import", "evidence": ["src/checkout/PayButton.tsx::chargeCard"], "anchor": "docs/project/capabilities.md#relationships" },
+    { "id": "checkout-payments:navigates_to:profile", "from": "checkout-payments", "type": "navigates_to", "to": "profile", "evidenceKind": "navigation-route", "evidence": ["src/checkout/PayButton.tsx::openProfile"], "anchor": "docs/project/capabilities.md#relationships" },
+    { "id": "checkout-payments:related_to:wallet", "from": "checkout-payments", "type": "related_to", "to": "wallet", "evidenceKind": "repository-doc", "evidence": ["src/wallet/WalletScreen.tsx::checkout"], "anchor": "docs/project/capabilities.md#relationships" },
+    { "id": "home-rows:navigates_to:playback", "from": "home-rows", "type": "navigates_to", "to": "playback", "evidenceKind": "navigation-route", "evidence": ["src/home/HomeRows.tsx::Player"], "anchor": "docs/project/capabilities.md#relationships" },
+    { "id": "payment-service:used_by:profile", "from": "payment-service", "type": "used_by", "to": "profile", "evidenceKind": "import", "evidence": ["src/profile/ProfileScreen.tsx::chargeCard"], "anchor": "docs/project/capabilities.md#relationships" }
+  ]
+}

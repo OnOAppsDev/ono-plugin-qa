@@ -1,6 +1,6 @@
 ---
 description: Record a manual smoke or functional execution against a registered build — PASS / FAIL / BLOCKED / NOT_RUN per case, walked one case at a time.
-argument-hint: [feature-name] [smoke|functional] [build-id] [surface] [--device=?] [--os-runtime=?] [--qa-repo=path?]
+argument-hint: [feature-name|scope] [smoke|functional|regression] [build-id] [surface] [--device=?] [--os-runtime=?] [--qa-repo=path?]
 ---
 
 Record an execution for the feature in `$ARGUMENTS` against a registered build on one surface. The QA engineer executes each case by hand; this command walks the cases in a fixed order and persists every answer immediately, so an interrupted session loses nothing. No automation, device connection or Appium session is involved.
@@ -26,3 +26,7 @@ All writes go through `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa-ledger.mjs" <comma
    - If the session was invalid (wrong build installed, device failure), `run abort --run <run-id> --reason "…"` instead — an aborted run never counts as evidence.
 9. Report with `view smoke --build <build-id> --surface <surface>` (smoke) or `view execution --scope feature:<feature-slug> --surface <surface>` (functional): counts, pending and stale cases, and the smoke gate. Results recorded against a plan row that `/sync-qa-test-plan` later changed show as `stale` — they stay in history but need re-execution.
 10. Never run `git add`/`commit`/`push` in the QA repo — tell the human to review the new `qa-ledger/` records and commit them manually.
+
+### Regression runs
+
+`/record-execution <scope> regression <build-id> <surface>` executes the scope's current regression decision from `/plan-regression` — for a feature (`feature:<slug>`) or a bug (`bug:<id>`). It follows the same steps with these differences: open the run with `run open --type regression --scope <scope> --build <build-id> --surface <surface> --device "<device>" --executor "<name>" --decision <RD-n>` (no `--plan` — the plans come from the decision); the build/surface must be one of the decision's targets (`REGRESSION_TARGET_MISMATCH` otherwise — evidence never carries to another build); the same per-build smoke gate applies; and `view run-cases` lists only the cases QA selected (`CASE_NOT_SELECTED` for anything else). A regression FAIL is only a failed result — report a bug with `/report-bug --from-run …` only if the human decides to. Report with `view regression --scope <scope>`.

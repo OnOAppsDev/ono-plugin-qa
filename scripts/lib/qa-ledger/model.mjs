@@ -7,6 +7,7 @@ import path from 'node:path';
 import { SCHEMA, EXECUTION_TYPES, RESULTS, SCOPE_KINDS, BUG_REF_TYPES, LEDGER_DIR, fail, canonical, hashOk, isStr, isIso, strictObject, uniqueCanon, idOk } from './core.mjs';
 import { executionErrors } from './execution.mjs';
 import { BUG_FIELDS, bugShapeErrors, bugErrors, fixesClaimedOk } from './bugs.mjs';
+import { decisionOk, regressionErrors } from './regression.mjs';
 
 // ---------- scope context fields ----------
 
@@ -54,6 +55,8 @@ export const FIELDS = {
   // Stage 4 (additive): the Dev feature this QA scope is bound to, and attributed
   // approvals to work from a handoff that is not yet ready-for-qa.
   dev_handoff: { op: 'set', kinds: ['feature'], valid: devHandoffOk },
+  // Stage 5 (additive): QA's explicit regression decisions, keyed by id (RD-<n>).
+  regression_decisions: { op: 'add', keyOf: (v) => v.id, valid: decisionOk },
   handoff_overrides: {
     op: 'add',
     kinds: ['feature'],
@@ -174,7 +177,8 @@ function shapeErrors(rec, where) {
       if (!strictObject(rec, ['v', 'seq', 'prev', 'at', 'kind', 'field', 'value', 'by', 'reason', 'hash']) || !isStr(rec.by) || !isStr(rec.reason)) return bad('invalid context.retract');
       return [];
     case 'run.opened':
-      if (!strictObject(rec, ['v', 'seq', 'prev', 'at', 'kind', 'run_id', 'execution_type', 'scope', 'build_id', 'surface', 'device', 'os_runtime', 'executor', 'plan_refs', 'bug_ref', 'hash'])) return bad('unexpected run fields');
+      if (!strictObject(rec, ['v', 'seq', 'prev', 'at', 'kind', 'run_id', 'execution_type', 'scope', 'build_id', 'surface', 'device', 'os_runtime', 'executor', 'plan_refs', 'bug_ref', 'hash'], ['regression_decision'])) return bad('unexpected run fields');
+      if ((rec.execution_type === 'regression') !== ('regression_decision' in rec) || ('regression_decision' in rec && !/^RD-[1-9][0-9]*$/.test(rec.regression_decision))) return bad('a regression run, and only a regression run, names its regression decision');
       if (!EXECUTION_TYPES.includes(rec.execution_type) || !idOk(rec.surface) || !isStr(rec.device) || !isStr(rec.executor)) return bad('invalid run header');
       if (!(rec.os_runtime === null || isStr(rec.os_runtime)) || !(rec.bug_ref === null || isStr(rec.bug_ref))) return bad('invalid run header');
       if (!Array.isArray(rec.plan_refs) || !rec.plan_refs.every((p) => strictObject(p, ['plan', 'fingerprint']) && isStr(p.plan) && isStr(p.fingerprint))) return bad('invalid plan_refs');
@@ -352,7 +356,7 @@ export function loadLedger(store) {
     }
   }
   const model = { errors, warnings, builds, scopes, runs, results, corrupt };
-  errors.push(...executionErrors(model), ...bugErrors(model));
+  errors.push(...executionErrors(model), ...bugErrors(model), ...regressionErrors(model));
   return model;
 }
 

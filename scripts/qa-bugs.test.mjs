@@ -476,7 +476,8 @@ test('S3-23 feature execution and smoke behave exactly as before', () => {
 function sources() {
   const files = [path.join(HERE, 'qa-ledger.mjs')];
   const lib = path.join(HERE, 'lib', 'qa-ledger');
-  for (const f of fs.readdirSync(lib)) files.push(path.join(lib, f));
+  // Since Stage 5, lib/qa-ledger/knowledge.mjs is the one designated Project Knowledge consumer; no other module may touch it.
+  for (const f of fs.readdirSync(lib)) if (f !== 'knowledge.mjs') files.push(path.join(lib, f));
   return files.map((f) => [path.relative(PLUGIN_ROOT, f), fs.readFileSync(f, 'utf8')]);
 }
 
@@ -490,10 +491,11 @@ test('S3-24 no Project Knowledge is consumed', () => {
   for (const c of STAGE3_COMMANDS) assert.ok(!/repo-knowledge|docs\/project/.test(fs.readFileSync(path.join(PLUGIN_ROOT, 'commands', `${c}.md`), 'utf8')), c);
 });
 
+// Regression arrived in Stage 5; readiness, sign-off and release are still absent.
 test('S3-25 no regression, readiness or release logic exists yet', () => {
   const w = standalone();
-  for (const cmd of [['regression'], ['readiness'], ['signoff'], ['release'], ['view', 'readiness'], ['view', 'regression']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--bug', 'bug:BUG-27');
-  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/regression|readiness|sign-?off|release/i.test(name), name);
+  for (const cmd of [['readiness'], ['signoff'], ['release'], ['view', 'readiness']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--bug', 'bug:BUG-27');
+  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/readiness|sign-?off|release/i.test(name), name);
   const view = JSON.stringify(w.ok('view', 'bug', '--bug', 'bug:BUG-27'));
   assert.ok(!/READY|verdict|blocking/i.test(view), 'severity is recorded, never turned into a readiness decision');
 });

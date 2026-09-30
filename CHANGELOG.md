@@ -54,6 +54,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Ledger changes:** `handoff resolve` / `handoff ingest` helper commands; additive scope fields `dev_handoff`, `handoff_overrides`; optional `why_not_automatable` / `owner` on `debt`.
   - **Read-only on the code repo:** nothing there is ever written.
   - **Tests:** `scripts/qa-handoff.test.mjs` (20), and 10 new mutants.
+- Project Knowledge + regression (lifecycle Stage 5), for feature and standalone-bug scopes alike.
+  - **Vendored verbatim:** the ecosystem's Project Knowledge contract (`docs/repo-knowledge-contract.md`, from the Inspector) and the Dev plugin's reader (`scripts/vendor/read-repo-knowledge.ts`). They're consumed through one QA module, `scripts/lib/qa-ledger/knowledge.mjs`, with the reader's own trusted / verifyOnUse / deriveLive semantics and no second freshness mechanism.
+  - **Capability identity:** by exact id, exact name or source path only. A Stage 4 binding is used as-is, and several matches are never auto-selected.
+  - **Candidates:** `regression candidates` lists the capability's first-degree relationships, with evidence always re-checked against the current source. Edges whose evidence fails are dropped from context; there's no transitive expansion and no scoring. Existing QA coverage (bound scopes' plan cases, bug scenarios, generated automation, Project Knowledge test evidence) is shown, or reported as unknown.
+  - **`/plan-regression` and `regression decide`:** QA's explicit decision is persisted as `regression_decisions`:
+    - required yes/no, never defaulted, always with a reason;
+    - every candidate included or excluded with a reason;
+    - existing cases from approved plans (or the bug's own `R1`);
+    - target builds and surfaces.
+  - **Regression runs:** Stage 1 runs of type `regression`, bound to the current decision, only on its targets (no carry-forward to a new build), only through the Stage 2 smoke gate, and only the selected cases. A FAIL stays a FAIL. `view regression` shows the status per target, and `validate` re-checks every regression run.
+  - **Planning isolation:** test planning and sync never consume Project Knowledge, and a repo without it plans regression manually.
+  - **Tests:** `scripts/qa-regression.test.mjs` (28), and 13 new mutants (first-degree guard, evidence re-check, manual decision, regression smoke gate, selected-case restriction, …).
 
 ## [0.7.0] - 2026-08-25
 
