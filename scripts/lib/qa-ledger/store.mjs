@@ -94,10 +94,12 @@ export class Store {
     fs.appendFileSync(this.p(...segments), line);
   }
 
-  // The one write outside qa-ledger/: a derived Markdown view at bugs/<id>/bug.md.
-  // It is regenerated in full from the ledger and never read back.
+  // The only writes outside qa-ledger/: derived Markdown views at bugs/<id>/bug.md and
+  // readiness/<kind>/<id>.md. They are regenerated in full and never read back.
   writeDerived(segments, content) {
-    if (segments.length !== 3 || segments[0] !== 'bugs' || !ID_RE.test(segments[1]) || segments[2] !== 'bug.md') fail('PATH_OUTSIDE_QA_REPO', `derived views live only at bugs/<id>/bug.md`);
+    const bugView = segments.length === 3 && segments[0] === 'bugs' && ID_RE.test(segments[1]) && segments[2] === 'bug.md';
+    const readinessView = segments.length === 3 && segments[0] === 'readiness' && ['feature', 'bug'].includes(segments[1]) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.md$/.test(segments[2]);
+    if (!bugView && !readinessView) fail('PATH_OUTSIDE_QA_REPO', 'derived views live only at bugs/<id>/bug.md and readiness/<kind>/<id>.md');
     let cur = this.root;
     for (const s of segments) {
       cur = path.join(cur, s);

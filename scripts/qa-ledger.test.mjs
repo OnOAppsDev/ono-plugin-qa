@@ -446,7 +446,9 @@ test('14 existing QA flows are untouched: xlsx export is identical and no old fl
     // Stage 4 binds the Dev handoff into the ledger through /check-qa-coverage, by design.
     'commands/check-qa-coverage.md',
     // Stage 5 records regression decisions in the ledger.
-    'commands/plan-regression.md']);
+    'commands/plan-regression.md',
+    // Stage 6 computes readiness and records sign-off from the ledger.
+    'commands/qa-readiness.md', 'commands/qa-signoff.md']);
   for (const dir of ['commands', 'agents', 'skills', 'templates']) {
     for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, dir), { recursive: true })) {
       const p = path.join(PLUGIN_ROOT, dir, f);

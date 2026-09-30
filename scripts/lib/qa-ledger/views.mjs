@@ -7,6 +7,7 @@ import { orderedBuilds, runOrder, scopeBuildIds, requireScope } from './query.mj
 import { viewSmoke, viewExecution, viewRunCases } from './execution.mjs';
 import { viewBug, viewBugs, viewCaseBugs } from './bugs.mjs';
 import { viewRegression } from './regression.mjs';
+import { computeReadiness, viewSignoffs } from './readiness.mjs';
 
 function runSummary(run) {
   const h = run.header;
@@ -137,6 +138,10 @@ export function view(root, model, what, o) {
       return viewCaseBugs(model, o);
     case 'regression':
       return viewRegression(root, model, requireScope(model, o.scope).ref);
+    case 'readiness':
+      return { readiness: computeReadiness(root, model, o.scope) };
+    case 'signoffs':
+      return viewSignoffs(root, model, o);
     default:
       fail('UNKNOWN_COMMAND', `unknown view "${what}"`);
   }

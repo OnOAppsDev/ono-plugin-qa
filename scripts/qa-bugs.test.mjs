@@ -494,8 +494,9 @@ test('S3-24 no Project Knowledge is consumed', () => {
 // Regression arrived in Stage 5; readiness, sign-off and release are still absent.
 test('S3-25 no regression, readiness or release logic exists yet', () => {
   const w = standalone();
-  for (const cmd of [['readiness'], ['signoff'], ['release'], ['view', 'readiness']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--bug', 'bug:BUG-27');
-  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/readiness|sign-?off|release/i.test(name), name);
+  // Readiness and sign-off arrived in Stage 6 (view readiness, /qa-readiness, /qa-signoff); this stage's own operational views still carry no verdict.
+  for (const cmd of [['readiness'], ['signoff'], ['release']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--bug', 'bug:BUG-27');
+  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/release/i.test(name), name);
   const view = JSON.stringify(w.ok('view', 'bug', '--bug', 'bug:BUG-27'));
   assert.ok(!/READY|verdict|blocking/i.test(view), 'severity is recorded, never turned into a readiness decision');
 });

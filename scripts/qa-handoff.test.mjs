@@ -375,8 +375,9 @@ test('S4-17 no Project Knowledge reader is added', () => {
 // Regression arrived in Stage 5; readiness and sign-off are still absent.
 test('S4-18 no regression logic and S4-19 no readiness logic are added', () => {
   const w = withScope();
-  for (const cmd of [['readiness'], ['signoff'], ['view', 'readiness']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--scope', 'feature:checkout');
-  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/readiness|sign-?off|release/i.test(name), name);
+  // Readiness and sign-off arrived in Stage 6 (view readiness, /qa-readiness, /qa-signoff); this stage's own operational views still carry no verdict.
+  for (const cmd of [['readiness'], ['signoff']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--scope', 'feature:checkout');
+  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/release/i.test(name), name);
   const out = JSON.stringify(ingest(w, '--feature', 'checkout'));
   assert.ok(!/READY_WITH|verdict|NOT_READY/.test(out));
 });

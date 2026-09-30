@@ -494,8 +494,9 @@ test('S2-19 no Project Knowledge is consumed', () => {
 
 test('S2-20 no readiness or sign-off logic exists yet', () => {
   const w = feature();
-  for (const cmd of [['readiness'], ['signoff'], ['view', 'readiness'], ['qa-readiness']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--scope', 'feature:checkout');
-  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/readiness|sign-?off/i.test(name), `no ${name} yet`);
+  // Readiness and sign-off arrived in Stage 6 (view readiness, /qa-readiness, /qa-signoff); this stage's own operational views still carry no verdict.
+  for (const cmd of [['readiness'], ['signoff'], ['qa-readiness']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--scope', 'feature:checkout');
+  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/release/i.test(name), `no ${name} yet`);
   smoke(w, '103', 'android');
   const view = JSON.stringify(w.ok('view', 'execution', '--scope', 'feature:checkout'));
   assert.ok(!/READY|verdict|sign_?off/i.test(view), 'operational views carry no readiness verdict');

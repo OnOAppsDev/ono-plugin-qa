@@ -66,6 +66,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Regression runs:** Stage 1 runs of type `regression`, bound to the current decision, only on its targets (no carry-forward to a new build), only through the Stage 2 smoke gate, and only the selected cases. A FAIL stays a FAIL. `view regression` shows the status per target, and `validate` re-checks every regression run.
   - **Planning isolation:** test planning and sync never consume Project Knowledge, and a repo without it plans regression manually.
   - **Tests:** `scripts/qa-regression.test.mjs` (28), and 13 new mutants (first-degree guard, evidence re-check, manual decision, regression smoke gate, selected-case restriction, …).
+- QA readiness + sign-off (lifecycle Stage 6), specified in `docs/qa-readiness-contract.md`.
+  - **Deterministic verdict:** READY / READY_WITH_EXCEPTIONS / NOT_READY, computed only from the ledger. No Project Knowledge, Dev plugin, release tool or tracker is read.
+  - **Rules:** R1 smoke, R2 plan, R3 functional (including stale evidence), R4 bugs (blocking severities critical/major), R5 re-tests, R6 regression decision, R7 regression execution, R8 QA debt, R9 surface coverage. A standalone bug needs no plan. Automation never blocks.
+  - **Candidate build:** per surface, the latest smoke-passed build unless QA pins one (`readiness pin` / `unpin`).
+  - **Exceptions:** explicit and exact (`readiness except`: blocker id, kind, reason, approver, optional build). Only they make a verdict READY_WITH_EXCEPTIONS.
+  - **Debt discharge:** by an effective PASS (`readiness discharge`).
+  - **Sign-off:** `/qa-signoff` / `readiness signoff` pins the verdict and a fingerprint over every consumed source record: scope and linked-bug events, consumed runs, builds and plan content, with sign-offs and generated Markdown excluded. It goes stale automatically on any change; `view signoffs` lists validity and every stale sign-off.
+  - **Report:** `/qa-readiness` writes the deterministic `readiness/<kind>/<id>.md` report, with frontmatter per the contract and sections from the per-surface matrix to the Release Notes Input.
+  - **Release scopes:** only aggregate their members. There is no release artifact and no Release integration.
+  - **Ledger changes:** additive, managed context fields `candidate_builds`, `exceptions`, `debt_discharges`, `signoffs`; `MANAGED_FIELD` for a generic write to them.
+  - **Tests:** `scripts/qa-readiness.test.mjs` (27), and 24 new mutants (every rule, exception matching, the verdict, fingerprint coverage, sign-off validity).
 
 ## [0.7.0] - 2026-08-25
 

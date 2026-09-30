@@ -438,8 +438,9 @@ test('S5-25 earlier stages are unchanged: non-regression runs keep their exact h
 
 test('S5-26 no readiness, S5-27 no release, S5-28 no automation applicability logic', () => {
   const w = featureSetup();
-  for (const cmd of [['readiness'], ['signoff'], ['release'], ['view', 'readiness'], ['automation', 'applicability']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--scope', 'feature:checkout');
-  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/readiness|sign-?off|release/i.test(name), name);
+  // Readiness and sign-off arrived in Stage 6 (view readiness, /qa-readiness, /qa-signoff); this stage's own operational views still carry no verdict.
+  for (const cmd of [['readiness'], ['signoff'], ['release'], ['automation', 'applicability']]) w.refused('UNKNOWN_COMMAND', ...cmd, '--scope', 'feature:checkout');
+  for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'commands'))) assert.ok(!/release/i.test(name), name);
   for (const f of ['commands/generate-automation-scripts.md', 'skills/automation-test-generation/SKILL.md', 'agents/automation-test-writer.md']) {
     const text = fs.readFileSync(path.join(PLUGIN_ROOT, f), 'utf8');
     assert.ok(!/applicab|Project Knowledge|regression/i.test(text), `${f} is untouched by Stage 5`);

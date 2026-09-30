@@ -27,6 +27,7 @@ import { checkRunOpen, checkResultAdd, checkRunClose, checkContextValue, require
 import { view } from './lib/qa-ledger/views.mjs';
 import { readKnowledge, knowledgeSummary, resolveCapability, directCandidates, coverageFor } from './lib/qa-ledger/knowledge.mjs';
 import { buildDecision, checkRegressionOpen, checkRegressionResult } from './lib/qa-ledger/regression.mjs';
+import { computeReadiness, renderReadinessMarkdown, requireNonRelease, pinValue, exceptionValue, dischargeValue } from './lib/qa-ledger/readiness.mjs';
 import { READY_STATUS, resolveCodeRepo, resolveHandoff } from './lib/qa-ledger/handoff.mjs';
 import { SEVERITIES, RESOLUTIONS, CLOSED, bugReport, bugCase, bugCaseKey, bugCaseHash, deriveBug, requireReportedBug, resolveCaseKey, caseScenario, checkBugRunOpen, checkBugResult, checkBugRunClose, checkFixClaims, renderBugMarkdown } from './lib/qa-ledger/bugs.mjs';
 
@@ -94,6 +95,7 @@ function cmdScopeEvent(store, o) {
   if (!['set', 'add', 'retract'].includes(o.op)) fail('INVALID_VALUE', '--op must be set, add or retract');
   const spec = FIELDS[o.field];
   if (!spec) fail('UNKNOWN_FIELD', `unknown context field "${o.field}" — known: ${Object.keys(FIELDS).join(', ')}`);
+  if (spec.managed) fail('MANAGED_FIELD', `${o.field} is written only through its readiness command (readiness pin|unpin|except|discharge|signoff), which validates it`);
   if (spec.kinds && !spec.kinds.includes(s.kind)) fail('INVALID_FIELD_FOR_SCOPE', `${o.field} applies only to ${spec.kinds.join('/')} scopes`);
   if ((o.op === 'set') !== (spec.op === 'set')) fail('INVALID_OP', `${o.field} is a${spec.op === 'set' ? ' set' : 'n add'} field — use --op ${spec.op === 'set' ? 'set' : 'add or retract'}`);
   let value;
@@ -590,6 +592,69 @@ function cmdRegressionDecide(store, o) {
   return { scope: s.ref, decision: value };
 }
 
+// ---------- QA readiness + sign-off (Stage 6) ----------
+
+function readinessTarget(store, ref) {
+  const s = parseScopeRef(ref);
+  const model = loadForWrite(store, s.ref);
+  if (!model.scopes.has(s.ref)) fail('UNKNOWN_SCOPE', `scope ${s.ref} does not exist`);
+  const scope = model.scopes.get(s.ref);
+  requireNonRelease(scope);
+  return { s, model, scope };
+}
+const appendTo = (store, scope, body) => appendEvent(store, ['scopes', scope.kind, `${scope.ref.slice(scope.kind.length + 1)}.jsonl`], scope.events, body);
+
+function renderReadiness(store, ref) {
+  const r = computeReadiness(store.root, loadForRead(store), ref);
+  if (r.kind === 'release') fail('RELEASE_AGGREGATION_ONLY', `${ref} is aggregated in view readiness; no readiness artifact is written for a release scope`);
+  const [kind, id] = [r.kind, r.scope.slice(r.kind.length + 1)];
+  store.writeDerived(['readiness', kind, `${id}.md`], renderReadinessMarkdown(r));
+  return { rendered: `readiness/${kind}/${id}.md`, verdict: r.verdict, fingerprint: r.fingerprint };
+}
+
+function cmdReadinessPin(store, o) {
+  const { model, scope } = readinessTarget(store, o.scope);
+  const surfaces = computeReadiness(store.root, model, scope.ref).candidate_builds.map((c) => c.surface);
+  const value = pinValue(model, scope, o, surfaces);
+  const existing = (scope.context.candidate_builds ?? []).find((p) => p.surface === o.surface);
+  if (existing) scope.events.push(appendTo(store, scope, { kind: 'context.retract', field: 'candidate_builds', value: o.surface, by: o.by, reason: `re-pinned: ${o.reason}` }));
+  appendTo(store, scope, { kind: 'context.add', field: 'candidate_builds', value, by: o.by });
+  return { scope: scope.ref, pin: value };
+}
+
+function cmdReadinessUnpin(store, o) {
+  const { scope } = readinessTarget(store, o.scope);
+  if (!(scope.context.candidate_builds ?? []).some((p) => p.surface === o.surface)) fail('NOT_PRESENT', `no candidate build is pinned on ${o.surface}`);
+  appendTo(store, scope, { kind: 'context.retract', field: 'candidate_builds', value: o.surface, by: o.by, reason: o.reason });
+  return { scope: scope.ref, unpinned: o.surface };
+}
+
+function cmdReadinessExcept(store, o) {
+  const { model, scope } = readinessTarget(store, o.scope);
+  const value = exceptionValue(model, scope, o, computeReadiness(store.root, model, scope.ref));
+  appendTo(store, scope, { kind: 'context.add', field: 'exceptions', value, by: o['approved-by'] });
+  return { scope: scope.ref, exception: value };
+}
+
+function cmdReadinessDischarge(store, o) {
+  const { model, scope } = readinessTarget(store, o.scope);
+  const value = dischargeValue(model, scope, o);
+  if ((scope.context.debt_discharges ?? []).some((d) => d.debt_id === o.debt)) fail('DUPLICATE_VALUE', `${o.debt} is already discharged`);
+  appendTo(store, scope, { kind: 'context.add', field: 'debt_discharges', value, by: o.by });
+  return { scope: scope.ref, discharge: value };
+}
+
+// Sign-off pins the verdict and fingerprint of the readiness computed right now.
+function cmdReadinessSignoff(store, o) {
+  const { model, scope } = readinessTarget(store, o.scope);
+  const r = computeReadiness(store.root, model, scope.ref);
+  if (r.verdict === 'NOT_READY') fail('SIGNOFF_NOT_READY', `${scope.ref} is NOT_READY — resolve or explicitly except its blockers first`, { blockers: r.blockers.filter((b) => !b.excepted_by).map((b) => b.id) }); // invariant:signoff-needs-ready
+  const n = scope.events.filter((e) => e.kind === 'context.add' && e.field === 'signoffs').length + 1;
+  const value = { id: `SO-${n}`, verdict: r.verdict, fingerprint: r.fingerprint, notes: o.notes ?? null, signed_by: o.by };
+  appendTo(store, scope, { kind: 'context.add', field: 'signoffs', value, by: o.by });
+  return { scope: scope.ref, signoff: value, ...renderReadiness(store, scope.ref) };
+}
+
 const viewCmd = (what) => (s, o) => view(s.root, loadForRead(s), what, o);
 
 // ---------- CLI ----------
@@ -631,6 +696,14 @@ const COMMANDS = {
   'view bug': { single: ['bug'], req: ['bug'], opts: [], run: viewCmd('bug') },
   'view bugs': { opts: ['scope', 'state'], run: viewCmd('bugs') },
   'view case-bugs': { single: ['case'], req: ['case'], opts: [], run: viewCmd('case-bugs') },
+  'readiness pin': { req: ['scope', 'surface', 'build', 'reason', 'by'], opts: [], run: cmdReadinessPin },
+  'readiness unpin': { req: ['scope', 'surface', 'reason', 'by'], opts: [], run: cmdReadinessUnpin },
+  'readiness except': { req: ['scope', 'item', 'kind', 'reason', 'approved-by'], opts: ['build'], run: cmdReadinessExcept },
+  'readiness discharge': { req: ['scope', 'debt', 'result', 'by'], opts: [], run: cmdReadinessDischarge },
+  'readiness signoff': { req: ['scope', 'by'], opts: ['notes'], run: cmdReadinessSignoff },
+  'readiness render': { req: ['scope'], opts: [], run: (s, o) => renderReadiness(s, o.scope) },
+  'view readiness': { req: ['scope'], opts: [], run: viewCmd('readiness') },
+  'view signoffs': { opts: ['scope'], run: viewCmd('signoffs') },
   'knowledge lookup': { req: ['code-repo'], opts: ['capability', 'path', 'surface'], ledgerless: true, run: cmdKnowledgeLookup },
   'regression candidates': { req: ['scope'], opts: ['code-repo', 'capability', 'path'], run: cmdRegressionCandidates },
   'regression decide': { req: ['scope', 'required', 'reason', 'by'], opts: ['code-repo', 'capability', 'path', 'candidate', 'include', 'exclude', 'case', 'target'], run: cmdRegressionDecide },

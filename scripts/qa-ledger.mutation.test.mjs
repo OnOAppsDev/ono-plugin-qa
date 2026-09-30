@@ -20,7 +20,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.join('lib', 'qa-ledger');
 // The vendored Project Knowledge reader is copied with every mutant (never mutated) so Stage 5 can run.
 const SOURCES = ['qa-ledger.mjs', ...fs.readdirSync(path.join(HERE, LIB)).map((f) => path.join(LIB, f)), path.join('vendor', 'read-repo-knowledge.ts')];
-const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs'), s4: path.join(HERE, 'qa-handoff.test.mjs'), s5: path.join(HERE, 'qa-regression.test.mjs') };
+const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs'), s4: path.join(HERE, 'qa-handoff.test.mjs'), s5: path.join(HERE, 'qa-regression.test.mjs'), s6: path.join(HERE, 'qa-readiness.test.mjs') };
 
 // [invariant, exact source text, replacement, tests that must catch it ({ suite: [test-name prefixes] })]
 const MUTANTS = [
@@ -119,6 +119,31 @@ const MUTANTS = [
   ['only the current decision can be executed', "if (!current || current.id !== decision.id) fail('REGRESSION_DECISION_SUPERSEDED'", "if (false) fail('REGRESSION_DECISION_SUPERSEDED'", { s5: ['S5-23'] }],
   ['validate refuses regression outside its decision', "if (!decision.required || !onTarget || strays.length) errors.push({ code: 'REGRESSION_OUTSIDE_DECISION'", "if (false) errors.push({ code: 'REGRESSION_OUTSIDE_DECISION'", { s5: ['S5-29'] }],
   ['validate re-derives the smoke gate for every regression run', 'if (!gateHeld) errors.push', 'if (false) errors.push', { s5: ['S5-30'] }],
+  // ---- Stage 6: readiness rules, exceptions, fingerprint, sign-off ----
+  ['R1: the candidate build must be accepted by smoke', "if (s.build_id && s.smoke !== 'passed') add(", 'if (false) add(', { s6: ['S6-02'] }],
+  ['R2: every feature plan must be approved', "for (const p of plans) if (p.status !== 'approved') add(", 'for (const p of plans) if (false) add(', { s6: ['S6-03'] }],
+  ['R3: every applicable case must PASS', "if (c.status === 'pass' || c.status === 'excluded') continue; // invariant:r3-functional", 'continue; // invariant:r3-functional', { s6: ['S6-04'] }],
+  ['R3: stale evidence never counts as current', "if (c.status === 'pass' || c.status === 'excluded') continue; // invariant:r3-functional", "if (c.status === 'pass' || c.status === 'excluded' || c.status === 'stale') continue; // invariant:r3-functional", { s6: ['S6-17'] }],
+  ['R4: a blocking bug needs verified / duplicate / not reproducible', "const ok = blocking ? BLOCKING_CLOSES.includes(b.state) : b.state.startsWith('closed_');", "const ok = b.state.startsWith('closed_');", { s6: ['S6-05'] }],
+  ['R5: a delivered fix must be re-tested', "if (b.state === 'fix_delivered') add(`R5:", "if (false) add(`R5:", { s6: ['S6-06'] }],
+  ['R5: the candidate must contain the verified fix', 'if (c && idx.get(c) < idx.get(b.fixed_in_build)) add(', 'if (false) add(', { s6: ['S6-06'] }],
+  ['R6: a regression decision must exist', "if (!decision) add('R6'", "if (false) add('R6'", { s6: ['S6-07'] }],
+  ['R7: required regression cases must PASS', "for (const c of t.cases) if (c.status !== 'pass') add(", 'for (const c of t.cases) if (false) add(', { s6: ['S6-08'] }],
+  ['R7: the decision must target the candidate build', 'if (onSurface.length && !onSurface.some(', 'if (false && !onSurface.some(', { s6: ['S6-08'] }],
+  ['R8: QA debt must be discharged or excepted', 'for (const d of debt) if (!d.discharged) add(', 'for (const d of debt) if (false) add(', { s6: ['S6-09'] }],
+  ['R9: every required surface needs a candidate build', 'for (const c of candidates) if (!c.build_id) add(', 'for (const c of candidates) if (false) add(', { s6: ['S6-02'] }],
+  ['debt is discharged only by an effective PASS', "if (run.header.scope !== scope.ref || run.state !== 'closed' || result.superseded_by !== null || result.result !== 'pass') fail(", 'if (false) fail(', { s6: ['S6-09'] }],
+  ['an exception covers only the exact blocker it names', 'const ex = exceptions.find((e) => e.item === b.id && ', 'const ex = exceptions.find((e) => true && ', { s6: ['S6-10'] }],
+  ['an exception must name a current blocker', "if (!current.blockers.some((b) => b.id === o.item)) fail('UNKNOWN_BLOCKER'", "if (false) fail('UNKNOWN_BLOCKER'", { s6: ['S6-11'] }],
+  ['any unexcepted blocker means NOT_READY', "if (blockers.some((b) => !b.excepted_by)) return 'NOT_READY'; // invariant:verdict", '// verdict guard removed', { s6: ['S6-02', 'S6-10'] }],
+  ['READY_WITH_EXCEPTIONS is never reported as READY', "return blockers.length ? 'READY_WITH_EXCEPTIONS' : 'READY';", "return 'READY';", { s6: ['S6-10'] }],
+  ['the fingerprint covers the scope’s own records', 'if (r.field !== SIGNOFF_FIELD) out.push({ key: `scope:', 'if (false) out.push({ key: `scope:', { s6: ['S6-14', 'S6-21'] }],
+  ['the fingerprint covers linked bugs', 'for (const ref of bugRefs) if (ref !== scope.ref) stream(model.scopes.get(ref));', '', { s6: ['S6-20'] }],
+  ['the fingerprint covers consumed runs', "out.push({ key: `run:${h.run_id}:${run.state}`", "void ({ key: `run:${h.run_id}:${run.state}`", { s6: ['S6-25'] }],
+  ['the fingerprint covers plan content', 'out.push({ key: `plan:${p}`, hash: fp, at: null });', '', { s6: ['S6-25'] }],
+  ['a sign-off is never part of its own fingerprint', 'if (r.field !== SIGNOFF_FIELD) out.push({ key: `scope:', 'if (true) out.push({ key: `scope:', { s6: ['S6-24'] }],
+  ['a sign-off is valid only for the exact fingerprint', 'ev.value.fingerprint === current.fingerprint && ', '', { s6: ['S6-14', 'S6-21'] }],
+  ['NOT_READY can never be signed off', "if (r.verdict === 'NOT_READY') fail('SIGNOFF_NOT_READY'", "if (false) fail('SIGNOFF_NOT_READY'", { s6: ['S6-29'] }],
   ['validate replays every bug transition', 'errors.push(...deriveBug(model, scope.ref).violations);', '', { s3: ['S3-26'] }],
   ['execution views count only closed functional runs', "r.header.execution_type === 'functional' && r.state === 'closed'", "r.header.execution_type === 'functional'", { s2: ['S2-11', 'S2-14'] }],
 ];

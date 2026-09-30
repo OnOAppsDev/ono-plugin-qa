@@ -8,6 +8,7 @@ import { SCHEMA, EXECUTION_TYPES, RESULTS, SCOPE_KINDS, BUG_REF_TYPES, LEDGER_DI
 import { executionErrors } from './execution.mjs';
 import { BUG_FIELDS, bugShapeErrors, bugErrors, fixesClaimedOk } from './bugs.mjs';
 import { decisionOk, regressionErrors } from './regression.mjs';
+import { READINESS_FIELDS, readinessErrors } from './readiness.mjs';
 
 // ---------- scope context fields ----------
 
@@ -57,6 +58,8 @@ export const FIELDS = {
   dev_handoff: { op: 'set', kinds: ['feature'], valid: devHandoffOk },
   // Stage 5 (additive): QA's explicit regression decisions, keyed by id (RD-<n>).
   regression_decisions: { op: 'add', keyOf: (v) => v.id, valid: decisionOk },
+  // Stage 6 (additive, managed): candidate-build pins, exceptions, debt discharges, sign-offs.
+  ...READINESS_FIELDS,
   handoff_overrides: {
     op: 'add',
     kinds: ['feature'],
@@ -356,7 +359,7 @@ export function loadLedger(store) {
     }
   }
   const model = { errors, warnings, builds, scopes, runs, results, corrupt };
-  errors.push(...executionErrors(model), ...bugErrors(model), ...regressionErrors(model));
+  errors.push(...executionErrors(model), ...bugErrors(model), ...regressionErrors(model), ...readinessErrors(model));
   return model;
 }
 

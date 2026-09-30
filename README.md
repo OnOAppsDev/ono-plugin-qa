@@ -87,6 +87,8 @@ claude --plugin-dir /path/to/ono-plugin-qa
 | `/verify-bug` | bug id, build id, surface | Records one reproduction attempt: REPRODUCED → Dev, NOT_REPRODUCIBLE → closed, BLOCKED → retry later |
 | `/retest-bug` | bug id, build id, surface | Re-tests the fix build: PASS on every affected surface closes the bug; FAIL reopens it back to Dev for a new fix build |
 | `/resolve-bug` | bug id, `duplicate`\|`wont_fix` | Closes an open bug by a recorded human decision with a reason |
+| `/qa-readiness` | feature name, bug id or `release:<id>` | Computes the deterministic QA verdict — READY / READY_WITH_EXCEPTIONS / NOT_READY — from the ledger, lists every blocker by id, and writes `readiness/<kind>/<id>.md` |
+| `/qa-signoff` | feature name or bug id | Signs off the current verdict with its ledger fingerprint; the sign-off goes stale automatically when anything it covered changes |
 | `/plan-regression` | feature name or bug id, `--capability=`/`--path=` (optional) | Shows direct, evidence-checked regression candidates from Project Knowledge with existing QA coverage; QA decides (required or not, included/excluded with reasons, cases, target builds) and the decision is recorded. Regression then runs via `/record-execution … regression` |
 
 ## Pipeline
@@ -102,6 +104,7 @@ claude --plugin-dir /path/to/ono-plugin-qa
 | 4. Execution (per delivered build) | `/register-build`, `/set-qa-scope`, `/define-smoke-suite`, `/record-execution` | — (helper-driven) | — |
 | 5. Bugs (as needed) | `/report-bug`, `/verify-bug`, `/retest-bug`, `/resolve-bug` | — (helper-driven) | — |
 | 6. Regression (QA decides) | `/plan-regression`, `/record-execution … regression` | — (helper-driven) | — |
+| 7. Readiness + sign-off | `/qa-readiness`, `/qa-signoff` | — (helper-driven) | — |
 
 Phase 1 depends on nothing but a Figma link and/or a spec/LLD doc — it can run the moment a feature is designed/specified, in parallel with dev's implementation. A test plan must be approved via `/approve-qa-test-plan` before Phase 2 will run against it; `/sync-qa-test-plan` can be run any time beforehand (or after) to catch up with design/spec changes, and resets approval if it makes a substantive change. Phase 2 depends on both an approved Phase 1 test plan and the dev plugin's `qa-handoff-template.md` output for the same feature, so it only runs once dev has handed off. `/verify-automation-locators` is a separate, optional follow-up to Phase 3 — unlike every other command here, it needs a live simulator/device with the app running, so `/generate-automation-scripts` itself still works with nothing but the two repos, and this step is only run when someone actually has a device up.
 
@@ -151,4 +154,6 @@ Bugs (Phase 5) use the same ledger. A bug is reported either from a FAIL QA chos
 
 Regression (Phase 6) works for features and standalone bugs alike. Project Knowledge (the Inspector's `.ono/repo-knowledge.json`, read through the Dev plugin's reader vendored verbatim) resolves the capability by exact identity and suggests its **direct** neighbours, each with its re-checked evidence and any existing QA coverage. QA decides — required or not, which candidates are in or out and why, which existing cases, which builds — and only that decision runs, only after smoke passed on that build. Test planning never uses Project Knowledge, and a repo without it still plans regression manually. See `docs/qa-project-knowledge.md`.
 
-Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-execution.test.mjs scripts/qa-bugs.test.mjs scripts/qa-handoff.test.mjs scripts/qa-regression.test.mjs scripts/qa-ledger.mutation.test.mjs`.
+Readiness (Phase 7) is a pure function of that ledger — nine rules (smoke, plan, functional, bugs, re-tests, regression decision, regression results, QA debt, surface coverage) over each required surface's candidate build (the latest smoke-passed build, unless QA pins one). A blocker is only ever cleared by recording a fact, or by an explicit exception naming it with a reason and an approver; only then is the verdict READY_WITH_EXCEPTIONS. A sign-off pins the verdict's fingerprint over every record it read, so any later change makes it stale automatically. A release scope aggregates its members. See `docs/qa-readiness-contract.md`.
+
+Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-execution.test.mjs scripts/qa-bugs.test.mjs scripts/qa-handoff.test.mjs scripts/qa-regression.test.mjs scripts/qa-readiness.test.mjs scripts/qa-ledger.mutation.test.mjs`.

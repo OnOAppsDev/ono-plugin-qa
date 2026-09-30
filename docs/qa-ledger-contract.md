@@ -1,6 +1,6 @@
 # QA Ledger Contract
 
-**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke), 3 (bug lifecycle), 4 (Dev → QA handoff), 5 (Project Knowledge + regression)**
+**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke), 3 (bug lifecycle), 4 (Dev → QA handoff), 5 (Project Knowledge + regression), 6 (readiness + sign-off)**
 Writer: `scripts/qa-ledger.mjs` — the **only** component that writes the ledger.
 Readers: this plugin's later lifecycle stages (execution, bugs, regression, readiness).
 
@@ -23,7 +23,7 @@ It sits **beside** the existing planning artifacts and never replaces them. `tes
   - is not a git repository root;
   - contains `.ono/` (an application repo with Project Knowledge);
   - is this plugin's own repository (`.claude-plugin/plugin.json` named `ono-plugin-qa`).
-- Writes happen only under `<qa-repo>/qa-ledger/`, plus one derived Markdown view per reported bug at `<qa-repo>/bugs/<id>/bug.md` (Stage 3). That view is regenerated in full and never read back. Every path is built from validated segments (no separators, `.` or `..`). The helper never writes through a symlink anywhere between `qa-ledger/` and the target.
+- Writes happen only under `<qa-repo>/qa-ledger/`, plus two kinds of derived Markdown view: `<qa-repo>/bugs/<id>/bug.md` (Stage 3) and `<qa-repo>/readiness/<kind>/<id>.md` (Stage 6). Both are regenerated in full and never read back. Every path is built from validated segments (no separators, `.` or `..`). The helper never writes through a symlink anywhere between `qa-ledger/` and the target.
 - The helper *reads* test plans only inside the QA repo and outside `qa-ledger/`, never through a link that leaves the repo.
 - It never writes to the application repo, Inspector artifacts, Dev Plugin artifacts, or any external system. A value such as a Dev artifact path is stored as a reference string and never opened.
 - It never runs git. The `block-qa-repo-git-writes` hook is unchanged; QA reviews and commits ledger files by hand like every other QA artifact.
@@ -438,6 +438,21 @@ To open one, all of the following must hold:
 
 `view regression --scope` shows the current decision (with `decided_at`), the full history, and, per target, the gate, runs and case statuses (`pass` / `fail` / `blocked` / `not_run` / `stale` / `pending`). `regression candidates --scope` is read-only and records nothing.
 
+## Stage 6 — QA readiness + sign-off
+
+Readiness is specified in [`docs/qa-readiness-contract.md`](qa-readiness-contract.md) and implemented in `scripts/lib/qa-ledger/readiness.mjs`. It covers the rules R1–R9, candidate builds, exceptions, the fingerprint, sign-off and release aggregation.
+
+Four additive, **managed** context fields are written only through their `readiness …` commands. A generic `scope event` on them is refused (`MANAGED_FIELD`), so each one is always validated.
+
+| Field | Op, key | Value |
+|---|---|---|
+| `candidate_builds` | add, keyed `surface` | `{ surface, build_id, reason }` — QA's explicit candidate pin; `readiness unpin` retracts it |
+| `exceptions` | add, keyed `id` | `{ id: EX-<n>, item: <blocker id>, kind, reason, approved_by, build_id \| null }` |
+| `debt_discharges` | add, keyed `debt_id` | `{ debt_id, result_id }` — an effective PASS from a closed run of the scope |
+| `signoffs` | add, keyed `id` | `{ id: SO-<n>, verdict, fingerprint, notes \| null, signed_by }` — not part of the fingerprint |
+
+`validate` checks that pins, exception builds and discharge results exist. Computing readiness writes nothing.
+
 ## Versioning and compatibility
 
 - `qa_ledger_schema: 1`. The helper refuses any other value (`UNSUPPORTED_SCHEMA`); it does not guess at a newer shape.
@@ -481,6 +496,12 @@ regression candidates --scope [--code-repo] [--capability] [--path]…   (read-o
 regression decide --scope --required yes|no --reason --by [--code-repo] [--capability] [--candidate]… [--include]… [--exclude "<id>=<why>"]… [--case]… [--target <build>@<surface>]…   (Stage 5)
 view regression --scope   (Stage 5)
 run open --type regression … --decision RD-<n>   (Stage 5)
+view readiness --scope   (read-only; Stage 6)
+view signoffs [--scope]   (read-only; Stage 6)
+readiness pin --scope --surface --build --reason --by | readiness unpin --scope --surface --reason --by   (Stage 6)
+readiness except --scope --item <blocker-id> --kind --reason --approved-by [--build]   (Stage 6)
+readiness discharge --scope --debt --result --by   (Stage 6)
+readiness signoff --scope --by [--notes] | readiness render --scope   (Stage 6)
 handoff resolve --code-repo [--scope] [--feature] [--breakdown] [--handoff]   (read-only; Stage 4)
 handoff ingest  --scope --code-repo --by [--feature] [--breakdown] [--handoff] [--override-by --override-reason]   (Stage 4)
 plan rows     --plan <qa-repo-relative path>        (read-only; needs no ledger)
@@ -489,6 +510,6 @@ suite check   --suite smoke/<surface>/smoke-suite.md (read-only; needs no ledger
 
 `QA_LEDGER_NOW=<ISO>` pins the clock. It exists for deterministic tests and must not be set in normal use.
 
-Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior), `node --test scripts/qa-bugs.test.mjs` (Stage 3 behavior), `node --test scripts/qa-handoff.test.mjs` (Stage 4 behavior), `node --test scripts/qa-regression.test.mjs` (Stage 5 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior), `node --test scripts/qa-bugs.test.mjs` (Stage 3 behavior), `node --test scripts/qa-handoff.test.mjs` (Stage 4 behavior), `node --test scripts/qa-regression.test.mjs` (Stage 5 behavior), `node --test scripts/qa-readiness.test.mjs` (Stage 6 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
 
 Implementation: `scripts/qa-ledger.mjs` is the single CLI entry point and the only place the write boundary (`Store`, in `scripts/lib/qa-ledger/store.mjs`) is constructed. The internal modules under `scripts/lib/qa-ledger/` parse, validate and derive; none of them writes to disk — `store.mjs` is the only module with file writes, including the one derived-view writer.
