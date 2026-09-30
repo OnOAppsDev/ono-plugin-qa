@@ -440,7 +440,9 @@ test('14 existing QA flows are untouched: xlsx export is identical and no old fl
 
   // The lifecycle commands added from Stage 2 on use the ledger by design; every
   // pre-existing command, agent, skill and template must not.
-  const LEDGER_WIRED = new Set(['commands/register-build.md', 'commands/set-qa-scope.md', 'commands/define-smoke-suite.md', 'commands/record-execution.md', 'templates/smoke-suite-template.md', 'commands/report-bug.md', 'commands/verify-bug.md', 'commands/retest-bug.md', 'commands/resolve-bug.md']);
+  const LEDGER_WIRED = new Set(['commands/register-build.md', 'commands/set-qa-scope.md', 'commands/define-smoke-suite.md', 'commands/record-execution.md', 'templates/smoke-suite-template.md', 'commands/report-bug.md', 'commands/verify-bug.md', 'commands/retest-bug.md', 'commands/resolve-bug.md',
+    // Stage 4 binds the Dev handoff into the ledger through /check-qa-coverage, by design.
+    'commands/check-qa-coverage.md']);
   for (const dir of ['commands', 'agents', 'skills', 'templates']) {
     for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, dir), { recursive: true })) {
       const p = path.join(PLUGIN_ROOT, dir, f);

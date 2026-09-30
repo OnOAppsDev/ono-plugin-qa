@@ -1,6 +1,6 @@
-# QA Readiness Contract — boundary (Stages 1–3)
+# QA Readiness Contract — boundary (Stages 1–4)
 
-**Status: boundary only.** Stages 1–3 implement **no** readiness computation, no verdict, no sign-off, and no Release integration. Their views are operational only. This document fixes what later stages may rely on from the ledger (`docs/qa-ledger-contract.md`), so readiness can be added without reshaping the ledger.
+**Status: boundary only.** Stages 1–4 implement **no** readiness computation, no verdict, no sign-off, and no Release integration. Their views are operational only. This document fixes what later stages may rely on from the ledger (`docs/qa-ledger-contract.md`), so readiness can be added without reshaping the ledger.
 
 ## What a later stage will produce
 
@@ -28,7 +28,8 @@ Readiness will be **derived, never stored as authoritative state.** It will be c
 | Per-case latest result without losing history | `latest-result` / `case-history` derivations |
 | Results recorded against an older plan row | `case_ref.row_hash` vs the plan's current row hash |
 | Approved plan (feature scopes) | Scope `plans` context plus the plan's own `status` (read-only) |
-| QA debt | Scope `debt` context |
+| QA debt | Scope `debt` context — since Stage 4 populated from the Dev handoff's Pending Verification (owed to QA) and accessibility `notRecorded`, QA-owned only (`docs/dev-handoff-contract.md`) |
+| Dev handoff sign-off | Scope `dev_handoff.handoff_status`, and any attributed `handoff_overrides` |
 | Bugs linked to work | `bug:` scopes, `bug_ref`, result `bug_refs`, scope `result_refs` / `related_scopes` |
 | Bug state, severity, open re-tests, fix builds | Stage 3 `view bug` / `view bugs` (derived state, next action, pending re-test surfaces, fixed-in build). Severity is recorded only; which severities block is readiness's decision. |
 | Release contents | `release:` scope `members` |

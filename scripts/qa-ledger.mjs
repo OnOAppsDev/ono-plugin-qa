@@ -25,6 +25,7 @@ import { FIELDS, keyOf, retractKey, loadLedger, loadForWrite, loadForRead } from
 import { requireScope, requireBugScope, findCaseInsensitive } from './lib/qa-ledger/query.mjs';
 import { checkRunOpen, checkResultAdd, checkRunClose, checkContextValue, requireSmokeGate } from './lib/qa-ledger/execution.mjs';
 import { view } from './lib/qa-ledger/views.mjs';
+import { READY_STATUS, resolveCodeRepo, resolveHandoff } from './lib/qa-ledger/handoff.mjs';
 import { SEVERITIES, RESOLUTIONS, CLOSED, bugReport, bugCase, bugCaseKey, bugCaseHash, deriveBug, requireReportedBug, resolveCaseKey, caseScenario, checkBugRunOpen, checkBugResult, checkBugRunClose, checkFixClaims, renderBugMarkdown } from './lib/qa-ledger/bugs.mjs';
 
 // ---------- commands ----------
@@ -404,6 +405,104 @@ function cmdSuiteCheck(store, o) {
   return { ok: errors.length === 0, ...suite, errors };
 }
 
+// ---------- Dev → QA handoff (Stage 4) ----------
+
+function recordedHandoff(store, scopeRef) {
+  if (!scopeRef || !store.initialized()) return null;
+  const model = loadForRead(store);
+  return model.scopes.get(parseScopeRef(scopeRef).ref)?.context.dev_handoff ?? null;
+}
+
+function cmdHandoffResolve(store, o) {
+  const code = resolveCodeRepo(o['code-repo'], store.root);
+  return resolveHandoff(code, store.root, o, recordedHandoff(store, o.scope));
+}
+
+// Binds a ready (or explicitly approved draft) Dev handoff into the feature scope:
+// canonical Dev identity, the QA plan, capability reference and QA-owned debt.
+function cmdHandoffIngest(store, o) {
+  const s = parseScopeRef(o.scope);
+  if (s.kind !== 'feature') fail('INVALID_FIELD_FOR_SCOPE', 'a Dev handoff binds to a feature scope');
+  if (Boolean(o['override-by']) !== Boolean(o['override-reason'])) fail('MISSING_ARGUMENT', 'a draft override needs both --override-by and --override-reason');
+  const model = loadForWrite(store, s.ref);
+  if (!model.scopes.has(s.ref)) fail('UNKNOWN_SCOPE', `scope ${s.ref} does not exist`);
+  const scope = model.scopes.get(s.ref);
+  const code = resolveCodeRepo(o['code-repo'], store.root);
+  const recorded = scope.context.dev_handoff ?? null;
+  const r = resolveHandoff(code, store.root, o, recorded);
+  if (!r.handoff.contract_ok) fail('HANDOFF_CONTRACT_MISMATCH', `${r.handoff.path} does not match the current Dev handoff contract (docs/dev-handoff-contract.md)`, { problems: r.problems });
+  if (r.identity_errors.length) fail('IDENTITY_MISMATCH', `the Dev artifacts disagree: ${r.identity_errors.join('; ')}`, { errors: r.identity_errors });
+  if (recorded && recorded.feature !== r.identity.feature) fail('IDENTITY_CONFLICT', `${s.ref} is bound to Dev feature "${recorded.feature}", not "${r.identity.feature}" — never rebound silently`);
+
+  // Status gate: ready-for-qa, or an attributed override for exactly this handoff content.
+  const fingerprint = r.handoff.fingerprint;
+  const events = [...scope.events];
+  const append = (body) => {
+    const rec = appendEvent(store, ['scopes', 'feature', `${s.id}.jsonl`], events, body);
+    events.push(rec);
+    return rec;
+  };
+  let override = null;
+  if (r.handoff.status !== READY_STATUS) { // invariant:handoff-status-gate
+    const existing = events.find((e) => e.kind === 'context.add' && e.field === 'handoff_overrides' && e.value.handoff_fingerprint === fingerprint);
+    if (existing) override = { ...existing.value, at: existing.at };
+    else if (o['override-by']) override = null;
+    else fail('HANDOFF_NOT_READY', `${r.handoff.path} is "${r.handoff.status ?? 'unset'}", not ${READY_STATUS} — dev has not signed it off; an explicit, attributed override is needed to work from it`, { status: r.handoff.status });
+    if (!existing) {
+      const rec = append({ kind: 'context.add', field: 'handoff_overrides', value: { qa_handoff_link: r.handoff.path, handoff_fingerprint: fingerprint, status: r.handoff.status, reason: o['override-reason'], approved_by: o['override-by'] }, by: o.by });
+      override = { ...rec.value, at: rec.at };
+    }
+  }
+
+  const identity = { ...r.identity, handoff_status: r.handoff.status, handoff_fingerprint: fingerprint, handoff_date: r.handoff.frontmatter.date ?? null, build_instructions_ref: r.handoff.build_instructions_ref };
+  if (!recorded || canonical(recorded) !== canonical(identity)) append({ kind: 'context.set', field: 'dev_handoff', value: identity, by: o.by });
+  if (identity.capability && scope.context.capability !== identity.capability) append({ kind: 'context.set', field: 'capability', value: identity.capability, by: o.by });
+  const plan = `${s.id}/test-plan.md`;
+  const hasPlan = fs.existsSync(path.join(store.root, plan));
+  if (hasPlan && !(scope.context.plans ?? []).includes(plan)) append({ kind: 'context.add', field: 'plans', value: resolveQaFile(store.root, plan).rel, by: o.by });
+  const have = new Set((scope.context.debt ?? []).map((d) => d.id));
+  const added = [];
+  for (const d of r.qa_debt) {
+    if (have.has(d.id)) continue;
+    append({ kind: 'context.add', field: 'debt', value: d, by: o.by });
+    added.push(d.id);
+    have.add(d.id);
+  }
+  return {
+    scope: s.ref,
+    identity,
+    handoff_status: r.handoff.status,
+    override,
+    debt_added: added,
+    qa_debt: r.qa_debt,
+    developer_context: r.developer_context,
+    accessibility: r.accessibility,
+    problems: r.problems,
+    coverage_frontmatter: {
+      feature: s.id,
+      qa_scope: s.ref,
+      qa_feature_path: `${s.id}/`,
+      dev_feature: identity.feature,
+      task_breakdown_link: identity.task_breakdown_link,
+      qa_handoff_link: identity.qa_handoff_link,
+      dev_handoff_source: identity.qa_handoff_link,
+      feature_analysis_link: identity.feature_analysis_link,
+      handoff_status: identity.handoff_status,
+      handoff_fingerprint: fingerprint,
+      handoff_draft_override_by: override?.approved_by ?? null,
+      handoff_draft_override_reason: override?.reason ?? null,
+      handoff_draft_override_at: override?.at ?? null,
+      platform: identity.platform,
+      device_type: identity.device_type,
+      surface: identity.surface,
+      capability: identity.capability,
+      accessibility_status: r.accessibility.statuses.join(', ') || 'none recorded',
+      qa_debt_ids: [...have],
+      test_plan_source: hasPlan ? plan : null,
+    },
+  };
+}
+
 const viewCmd = (what) => (s, o) => view(s.root, loadForRead(s), what, o);
 
 // ---------- CLI ----------
@@ -445,6 +544,8 @@ const COMMANDS = {
   'view bug': { single: ['bug'], req: ['bug'], opts: [], run: viewCmd('bug') },
   'view bugs': { opts: ['scope', 'state'], run: viewCmd('bugs') },
   'view case-bugs': { req: ['case'], opts: [], run: viewCmd('case-bugs') },
+  'handoff resolve': { req: ['code-repo'], opts: ['scope', 'feature', 'breakdown', 'handoff'], ledgerless: true, run: cmdHandoffResolve },
+  'handoff ingest': { req: ['scope', 'code-repo', 'by'], opts: ['feature', 'breakdown', 'handoff', 'override-by', 'override-reason'], run: cmdHandoffIngest },
 };
 const REPEATABLE = new Set(['plan', 'evidence', 'bug', 'related-scope', 'fixes', 'step', 'linked-case', 'affected-device']);
 

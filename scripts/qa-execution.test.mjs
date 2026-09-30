@@ -18,7 +18,8 @@ const PLUGIN_ROOT = path.dirname(HERE);
 const HELPER = process.env.QA_LEDGER_HELPER || path.join(HERE, 'qa-ledger.mjs');
 const FIXTURES = path.join(HERE, 'fixtures', 'qa-ledger');
 const STAGE2_COMMANDS = ['register-build', 'set-qa-scope', 'define-smoke-suite', 'record-execution'];
-const PLANNING_COMMANDS = ['create-qa-test-plan', 'sync-qa-test-plan', 'approve-qa-test-plan', 'check-qa-coverage', 'generate-automation-scripts', 'verify-automation-locators'];
+// check-qa-coverage is left out since Stage 4, which binds the Dev handoff into the ledger through it.
+const PLANNING_COMMANDS = ['create-qa-test-plan', 'sync-qa-test-plan', 'approve-qa-test-plan', 'generate-automation-scripts', 'verify-automation-locators'];
 
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 

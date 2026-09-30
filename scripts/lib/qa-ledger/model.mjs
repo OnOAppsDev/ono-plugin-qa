@@ -28,7 +28,8 @@ export const FIELDS = {
   debt: {
     op: 'add',
     key: 'id',
-    valid: (v) => strictObject(v, ['id', 'description'], ['domain', 'rule_id', 'source']) && idOk(v.id) && isStr(v.description) && ['domain', 'rule_id', 'source'].every((k) => v[k] === undefined || isStr(v[k])),
+    // Stage 4 (additive): why_not_automatable and owner ('qa' — QA-owned debt only) from the Dev handoff.
+    valid: (v) => strictObject(v, ['id', 'description'], ['domain', 'rule_id', 'source', 'why_not_automatable', 'owner']) && idOk(v.id) && isStr(v.description) && ['domain', 'rule_id', 'source', 'why_not_automatable'].every((k) => v[k] === undefined || isStr(v[k])) && (v.owner === undefined || v.owner === 'qa'),
   },
   cases: { op: 'add', key: 'id', valid: (v) => strictObject(v, ['id', 'summary']) && idOk(v.id) && isStr(v.summary) },
   result_refs: { op: 'add', valid: isStr, ref: 'result' },
@@ -50,7 +51,22 @@ export const FIELDS = {
   },
   // Stage 3 (additive): bug-only fields — severity, assignee, external_ref, evidence, linked_cases.
   ...BUG_FIELDS,
+  // Stage 4 (additive): the Dev feature this QA scope is bound to, and attributed
+  // approvals to work from a handoff that is not yet ready-for-qa.
+  dev_handoff: { op: 'set', kinds: ['feature'], valid: devHandoffOk },
+  handoff_overrides: {
+    op: 'add',
+    kinds: ['feature'],
+    keyOf: (v) => v.handoff_fingerprint,
+    valid: (v) => strictObject(v, ['qa_handoff_link', 'handoff_fingerprint', 'status', 'reason', 'approved_by']) && isStr(v.qa_handoff_link) && isStr(v.handoff_fingerprint) && (v.status === null || isStr(v.status)) && isStr(v.reason) && isStr(v.approved_by),
+  },
 };
+
+function devHandoffOk(v) {
+  const keys = ['feature', 'task_breakdown_link', 'qa_handoff_link', 'feature_analysis_link', 'dd_link', 'platform', 'device_type', 'surface', 'capability', 'handoff_status', 'handoff_fingerprint', 'handoff_date', 'build_instructions_ref'];
+  if (!strictObject(v, keys)) return false;
+  return ['feature', 'task_breakdown_link', 'qa_handoff_link', 'handoff_fingerprint', 'build_instructions_ref'].every((k) => isStr(v[k])) && keys.every((k) => v[k] === null || isStr(v[k]));
+}
 
 export const keyOf = (spec, v) => (spec.keyOf ? spec.keyOf(v) : spec.key ? v[spec.key] : canonical(v));
 // A retract names a keyed value by its key string, any other value by the value itself.

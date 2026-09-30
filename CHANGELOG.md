@@ -44,6 +44,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Smoke runs:** they record only their own suite's cases, so smoke never becomes bug evidence.
   - **Tests:** `scripts/qa-bugs.test.mjs` (39), and mutation tests extended to the bug transitions, the close/reopen guards, the re-test smoke gate and fix-claim supersession.
   - **Unchanged:** feature execution and smoke behavior.
+- Dev → QA handoff integration (lifecycle Stage 4). `/check-qa-coverage` now:
+  - **Finds the handoff deterministically:** Task Breakdown → `qa_handoff_link`, and Task Breakdown → `feature_analysis_link`. The breakdown is identified by its frontmatter, and the human is asked for a path only on `NEED_BREAKDOWN_PATH` / `NEED_HANDOFF_PATH`. The broken "starts with `# QA Handoff`" search is removed.
+  - **Gates on status:** only `ready-for-qa` is accepted, unless a human records an attributed draft override, which is persisted and shown in the report.
+  - **Checks the current section contract:** all ten producer sections, including `Build / Install / Testing Instructions` and `Pending Verification (owed to QA)`. This is documented once, in the new `docs/dev-handoff-contract.md`; the coverage agent and skill cite it instead of a stale 8-section list.
+  - **Keeps ownership separate:** QA-owned Pending Verification becomes QA debt on the feature scope, and accessibility `notRecorded` needs QA attention (never "covered"). Developer-owned Known Limitations / `VERIFY-4` debt stays developer context.
+  - **Binds identity:** the canonical Dev identity (feature, breakdown/handoff/analysis links, platform, device_type, surface, capability, build-instructions reference) is bound to the existing feature scope.
+  - **Makes the report machine-linkable:** the coverage report gets delimited frontmatter with that identity; its body and the Covered / Partially Covered / Gap methodology are unchanged.
+  - **Ledger changes:** `handoff resolve` / `handoff ingest` helper commands; additive scope fields `dev_handoff`, `handoff_overrides`; optional `why_not_automatable` / `owner` on `debt`.
+  - **Read-only on the code repo:** nothing there is ever written.
+  - **Tests:** `scripts/qa-handoff.test.mjs` (20), and 10 new mutants.
 
 ## [0.7.0] - 2026-08-25
 

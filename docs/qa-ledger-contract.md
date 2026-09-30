@@ -1,6 +1,6 @@
 # QA Ledger Contract
 
-**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke), 3 (bug lifecycle)**
+**Schema version: 1** · **Stages: 1 (foundation), 2 (feature execution + smoke), 3 (bug lifecycle), 4 (Dev → QA handoff)**
 Writer: `scripts/qa-ledger.mjs` — the **only** component that writes the ledger.
 Readers: this plugin's later lifecycle stages (execution, bugs, regression, readiness).
 
@@ -370,6 +370,33 @@ Bug scopes created with plain `scope create` (no report), as used by Stage 1's s
 - The generic `run open` / `result add` / `run close` path obeys the same guards.
 - Nothing is written to external trackers; `external_ref` is only stored.
 
+## Stage 4 — Dev → QA handoff
+
+`/check-qa-coverage` binds the Dev plugin's handoff into the feature scope through `handoff resolve` / `handoff ingest` (`scripts/lib/qa-ledger/handoff.mjs`). Everything about the Dev input is specified in [`docs/dev-handoff-contract.md`](dev-handoff-contract.md):
+- the discovery chain;
+- frontmatter encodings;
+- the status gate;
+- the ten sections;
+- the QA-vs-developer ownership boundary.
+
+The code repo is read-only: it's passed as `--code-repo`, it can't be the QA repo, and links can't escape it.
+
+Additive ledger changes (no new record kind, schema unchanged):
+
+| Field | Op | Value |
+|---|---|---|
+| `dev_handoff` | set (`feature` scopes) | The bound Dev identity: `feature`, `task_breakdown_link`, `qa_handoff_link`, `feature_analysis_link`, `dd_link`, `platform`, `device_type`, `surface`, `capability`, `handoff_status`, `handoff_fingerprint`, `handoff_date`, `build_instructions_ref` |
+| `handoff_overrides` | add (`feature` scopes), keyed by `handoff_fingerprint` | `{ qa_handoff_link, handoff_fingerprint, status, reason, approved_by }` — an attributed approval to work from a handoff that is not `ready-for-qa`; the event's `at` is when |
+| `debt` (Stage 1) | add | Gains optional `why_not_automatable` and `owner` (only `qa`). Handoff debt ids are `HV-<8 hex>` and `HV-a11y-not-recorded`, so re-ingesting never duplicates. |
+
+On ingest the scope also:
+- takes the Dev `capability` as its Stage 1 `capability` reference;
+- binds `<qa-slug>/test-plan.md` into `plans`. The plan file is never touched.
+
+A scope bound to one Dev feature refuses another (`IDENTITY_CONFLICT`).
+
+Discharging debt is not part of Stage 4.
+
 ## Versioning and compatibility
 
 - `qa_ledger_schema: 1`. The helper refuses any other value (`UNSUPPORTED_SCHEMA`); it does not guess at a newer shape.
@@ -408,12 +435,14 @@ bug verify    --bug --build --surface --device --executor --outcome reproduced|n
 bug retest    --bug --build --surface --device --executor --outcome pass|fail|blocked
 bug resolve   --bug --resolution duplicate|wont_fix --reason --by [--reference]
 bug render    --bug
+handoff resolve --code-repo [--scope] [--feature] [--breakdown] [--handoff]   (read-only; Stage 4)
+handoff ingest  --scope --code-repo --by [--feature] [--breakdown] [--handoff] [--override-by --override-reason]   (Stage 4)
 plan rows     --plan <qa-repo-relative path>        (read-only; needs no ledger)
 suite check   --suite smoke/<surface>/smoke-suite.md (read-only; needs no ledger; Stage 2)
 ```
 
 `QA_LEDGER_NOW=<ISO>` pins the clock. It exists for deterministic tests and must not be set in normal use.
 
-Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior), `node --test scripts/qa-bugs.test.mjs` (Stage 3 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+Tests: `node --test scripts/qa-ledger.test.mjs` (Stage 1 behavior), `node --test scripts/qa-execution.test.mjs` (Stage 2 behavior), `node --test scripts/qa-bugs.test.mjs` (Stage 3 behavior), `node --test scripts/qa-handoff.test.mjs` (Stage 4 behavior) and `node --test scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
 
 Implementation: `scripts/qa-ledger.mjs` is the single CLI entry point and the only place the write boundary (`Store`, in `scripts/lib/qa-ledger/store.mjs`) is constructed. The internal modules under `scripts/lib/qa-ledger/` parse, validate and derive; none of them writes to disk — `store.mjs` is the only module with file writes, including the one derived-view writer.

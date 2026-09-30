@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.join('lib', 'qa-ledger');
 const SOURCES = ['qa-ledger.mjs', ...fs.readdirSync(path.join(HERE, LIB)).map((f) => path.join(LIB, f))];
-const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs') };
+const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs'), s4: path.join(HERE, 'qa-handoff.test.mjs') };
 
 // [invariant, exact source text, replacement, tests that must catch it ({ suite: [test-name prefixes] })]
 const MUTANTS = [
@@ -87,6 +87,23 @@ const MUTANTS = [
   ['a superseded fix build cannot be re-tested', "if (superseded) fail('FIX_CLAIM_SUPERSEDED'", "if (false) fail('FIX_CLAIM_SUPERSEDED'", { s3: ['S3-38'] }],
   ['a smoke run records only its own suite cases', "if (h.execution_type === 'smoke' && !caseKey.startsWith(", "if (false && !caseKey.startsWith(", { s3: ['S3-39'] }],
   ['smoke run-cases never offer the bug scenario', "h.execution_type === 'smoke' ? [] : ", '', { s3: ['S3-39', 'S3-17'] }],
+  // ---- Stage 4: Dev → QA handoff integration ----
+  ['a handoff that is not ready-for-qa is refused', 'if (r.handoff.status !== READY_STATUS) { // invariant:handoff-status-gate', 'if (false) { // invariant:handoff-status-gate', { s4: ['S4-05', 'S4-06'] }],
+  ['a draft approval covers only the exact handoff content', 'e.value.handoff_fingerprint === fingerprint', 'true', { s4: ['S4-06'] }],
+  ['only rows owned by qa become QA debt', "const qaRows = pv.rows.filter((r) => r.owner === 'qa'); // invariant:qa-owned-only", 'const qaRows = pv.rows; // invariant:qa-owned-only', { s4: ['S4-09'] }],
+  ['accessibility notRecorded always needs attention', "attention: statuses.includes('notRecorded') || statuses.length === 0", 'attention: false', { s4: ['S4-10'] }],
+  ['the handoff is found through qa_handoff_link', 'else if (b.qa_handoff_link) {', 'else if (false) {', { s4: ['S4-01', 'S4-04'] }],
+  ['several candidate breakdowns are never resolved silently', "if (candidates.length !== 1) fail('NEED_BREAKDOWN_PATH'", "if (candidates.length === 0) fail('NEED_BREAKDOWN_PATH'", { s4: ['S4-03'] }],
+  ['the recorded breakdown link resolves the chain next time', 'else if (recorded?.task_breakdown_link) {', 'else if (false) {', { s4: ['S4-12'] }],
+  ['a handoff that breaks the section contract is refused', "if (!r.handoff.contract_ok) fail('HANDOFF_CONTRACT_MISMATCH'", "if (false) fail('HANDOFF_CONTRACT_MISMATCH'", { s4: ['S4-07', 'S4-09'] }],
+  ['a scope is never silently rebound to another Dev feature', "if (recorded && recorded.feature !== r.identity.feature) fail('IDENTITY_CONFLICT'", "if (false) fail('IDENTITY_CONFLICT'", { s4: ['S4-11'] }],
+  [
+    'Dev artifact links never escape the code repo',
+    "if (path.isAbsolute(rel) || !abs.startsWith(root + path.sep)) fail('PATH_OUTSIDE_CODE_REPO'",
+    "if (false) fail('PATH_OUTSIDE_CODE_REPO'",
+    { s4: ['S4-20'] },
+    ["if (!fs.realpathSync(abs).startsWith(root + path.sep)) fail('PATH_OUTSIDE_CODE_REPO'", "if (false) fail('PATH_OUTSIDE_CODE_REPO'"],
+  ],
   ['validate replays every bug transition', 'errors.push(...deriveBug(model, scope.ref).violations);', '', { s3: ['S3-26'] }],
   ['execution views count only closed functional runs', "r.header.execution_type === 'functional' && r.state === 'closed'", "r.header.execution_type === 'functional'", { s2: ['S2-11', 'S2-14'] }],
 ];
