@@ -4,6 +4,17 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- QA ledger foundation (lifecycle Stage 1): `scripts/qa-ledger.mjs`, a zero-dependency helper that is the only writer of `<qa-repo>/qa-ledger/`, plus `docs/qa-ledger-contract.md` and the Stage-1 boundary in `docs/qa-readiness-contract.md`.
+  - **Records:** immutable build records; append-only, hash-chained event streams for scopes (`feature:`, standalone `bug:`, `release:`) and execution runs (`smoke`, `functional`, `regression`, `retest`, `reproduction`), with results `pass`/`fail`/`blocked`/`not_run`.
+  - **Integrity:** in-run supersession for corrections, frozen terminal runs, referential-integrity validation.
+  - **Derived views:** builds, runs, case history, latest result. Nothing derivable is stored.
+  - **Test plans:** rows are referenced read-only by `<plan-folder>/<id>` with a row hash. Plans are never rewritten.
+  - **Scope:** foundation only. No command, agent, skill or template uses the ledger yet, and every existing flow, the test-plan format and the xlsx export are unchanged.
+  - **Tests:** `scripts/qa-ledger.test.mjs` (behavior, including an unchanged-xlsx golden check) and `scripts/qa-ledger.mutation.test.mjs` (each critical invariant disabled in turn must fail its tests).
+
 ## [0.7.0] - 2026-08-25
 
 ### Added

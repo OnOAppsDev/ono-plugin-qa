@@ -125,5 +125,12 @@ One hook is always active while the plugin is installed:
 | `skills/` | `qa-test-planning`, `qa-test-plan-sync`, `qa-coverage-analysis`, `qa-assistant-guidelines`, `automation-test-generation`, `appium-live-verification` |
 | `agents/` | `qa-test-designer`, `qa-test-plan-syncer`, `qa-coverage-reviewer`, `automation-test-writer`, `automation-locator-verifier` |
 | `templates/` | `qa-test-plan-template.md`, `qa-coverage-report-template.md`, `qa-test-cases-xlsx-schema.md`, `appium-test-spec-template.js`, `automation-project-scaffold/`, `automation-verification-report-template.md` |
-| `scripts/` | `build-test-cases-xlsx.mjs` — zero-dependency Node OOXML writer for the Hebrew/RTL Excel export |
+| `scripts/` | `build-test-cases-xlsx.mjs` — zero-dependency Node OOXML writer for the Hebrew/RTL Excel export; `qa-ledger.mjs` — the QA ledger helper (see below) |
+| `docs/` | `qa-ledger-contract.md`, `qa-readiness-contract.md` — lifecycle contracts |
 | `hooks/` | `block-qa-repo-git-writes` |
+
+## QA ledger (foundation)
+
+`scripts/qa-ledger.mjs` is the groundwork for tracking QA work after a plan exists: builds delivered to QA, the scope they serve (`feature:<slug>`, a standalone `bug:<id>`, or a `release:<id>`), and every execution result recorded against them. It keeps that state as append-only records under `<qa-repo>/qa-ledger/`, alongside the existing per-feature artifacts, and never rewrites a test plan. No command uses it yet — the user-facing lifecycle commands arrive in later stages. The contract is in [`docs/qa-ledger-contract.md`](docs/qa-ledger-contract.md).
+
+Tests: `node --test scripts/qa-ledger.test.mjs scripts/qa-ledger.mutation.test.mjs`.
