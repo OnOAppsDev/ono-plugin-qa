@@ -98,7 +98,7 @@ export class Store {
   // readiness/<kind>/<id>.md. They are regenerated in full and never read back.
   writeDerived(segments, content) {
     const bugView = segments.length === 3 && segments[0] === 'bugs' && ID_RE.test(segments[1]) && segments[2] === 'bug.md';
-    const readinessView = segments.length === 3 && segments[0] === 'readiness' && ['feature', 'bug'].includes(segments[1]) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.md$/.test(segments[2]);
+    const readinessView = segments.length === 3 && segments[0] === 'readiness' && ['feature', 'bug', 'release'].includes(segments[1]) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.md$/.test(segments[2]);
     if (!bugView && !readinessView) fail('PATH_OUTSIDE_QA_REPO', 'derived views live only at bugs/<id>/bug.md and readiness/<kind>/<id>.md');
     let cur = this.root;
     for (const s of segments) {

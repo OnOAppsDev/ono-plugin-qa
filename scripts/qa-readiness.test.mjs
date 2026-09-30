@@ -298,7 +298,8 @@ test('S6-16 a release scope only aggregates its members', () => {
   assert.deepEqual(r.members.map((m) => [m.scope, m.verdict]), [['feature:checkout', 'READY'], ['bug:BUG-27', 'NOT_READY']]);
   assert.ok(r.blockers.every((b) => b.member === 'bug:BUG-27'));
   assert.deepEqual(r.tested_builds, ['104']);
-  w.refused('RELEASE_AGGREGATION_ONLY', 'readiness', 'signoff', '--scope', 'release:2.4.0', '--by', 'lead');
+  // Stage 7 follow-up: a release scope is signable (when not NOT_READY); pins/exceptions stay member-level.
+  w.refused('SIGNOFF_NOT_READY', 'readiness', 'signoff', '--scope', 'release:2.4.0', '--by', 'lead');
   w.refused('RELEASE_AGGREGATION_ONLY', 'readiness', 'except', '--scope', 'release:2.4.0', '--item', 'R6', '--kind', 'waiver', '--reason', 'x', '--approved-by', 'lead');
   const empty = workspace();
   empty.ok('init');
@@ -402,7 +403,7 @@ test('S6-26 the readiness artifact is deterministic and follows the contract', (
   w.ok('readiness', 'render', '--scope', 'feature:checkout');
   assert.equal(fs.readFileSync(file, 'utf8'), first, 'byte-identical on re-render');
   const fm = /^---\n([\s\S]*?)\n---\n/.exec(first)[1];
-  for (const key of ['qa_readiness_schema: 1', 'scope: feature:checkout', 'verdict: READY', 'blocker_count: 0', 'exception_count: 0', 'fingerprint: sha256:', 'generated_at: ', 'signed_off_by: lead', 'signed_off_date: ', 'signoff_fingerprint: sha256:', 'signoff_status: valid', 'candidate_builds:', '  - android: 104']) assert.ok(fm.includes(key), key);
+  for (const key of ['qa_readiness_schema: 2', 'freshness_token: sha256:', 'qa_bug_id: null', 'external_ref: null', 'scope: feature:checkout', 'verdict: READY', 'blocker_count: 0', 'exception_count: 0', 'fingerprint: sha256:', 'generated_at: ', 'signed_off_by: lead', 'signed_off_date: ', 'signoff_fingerprint: sha256:', 'signoff_status: valid', 'candidate_builds:', '  - android: 104']) assert.ok(fm.includes(key), key);
   for (const h of ['## Per-Surface Matrix', '## Smoke', '## Functional', '## Regression', '## Bugs', '## Retests', '## QA Debt', '## Exceptions', '## Known Issues', '## Tested Builds', '## QA Notes', '## Release Notes Input']) assert.ok(first.includes(h), h);
   assert.ok(first.includes('Checked on Pixel 8'));
   assert.ok(!first.includes(new Date().getUTCFullYear() + '-' + String(new Date().getUTCMonth() + 1).padStart(2, '0') + '-' + String(new Date().getUTCDate()).padStart(2, '0') + 'T') || first.includes('2026-09-25'), 'generated_at comes from the ledger, not the wall clock');

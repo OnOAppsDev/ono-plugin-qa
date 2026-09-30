@@ -20,7 +20,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.join('lib', 'qa-ledger');
 // The vendored Project Knowledge reader is copied with every mutant (never mutated) so Stage 5 can run.
 const SOURCES = ['qa-ledger.mjs', ...fs.readdirSync(path.join(HERE, LIB)).map((f) => path.join(LIB, f)), path.join('vendor', 'read-repo-knowledge.ts')];
-const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs'), s4: path.join(HERE, 'qa-handoff.test.mjs'), s5: path.join(HERE, 'qa-regression.test.mjs'), s6: path.join(HERE, 'qa-readiness.test.mjs') };
+const SUITES = { s1: path.join(HERE, 'qa-ledger.test.mjs'), s2: path.join(HERE, 'qa-execution.test.mjs'), s3: path.join(HERE, 'qa-bugs.test.mjs'), s4: path.join(HERE, 'qa-handoff.test.mjs'), s5: path.join(HERE, 'qa-regression.test.mjs'), s6: path.join(HERE, 'qa-readiness.test.mjs'), s7: path.join(HERE, 'qa-release-readiness.test.mjs') };
 
 // [invariant, exact source text, replacement, tests that must catch it ({ suite: [test-name prefixes] })]
 const MUTANTS = [
@@ -146,6 +146,24 @@ const MUTANTS = [
   ['NOT_READY can never be signed off', "if (r.verdict === 'NOT_READY') fail('SIGNOFF_NOT_READY'", "if (false) fail('SIGNOFF_NOT_READY'", { s6: ['S6-29'] }],
   ['validate replays every bug transition', 'errors.push(...deriveBug(model, scope.ref).violations);', '', { s3: ['S3-26'] }],
   ['execution views count only closed functional runs', "r.header.execution_type === 'functional' && r.state === 'closed'", "r.header.execution_type === 'functional'", { s2: ['S2-11', 'S2-14'] }],
+  // Stage 7 follow-up: release artifact, bug identity, freshness token.
+  ['a release artifact can be signed off', 'readinessTarget(store, o.scope, { release: true })', 'readinessTarget(store, o.scope, { release: false })', { s7: ['G1-03'] }],
+  ['pins and exceptions stay member-level', 'if (!release) requireNonRelease(scope);', 'if (false) requireNonRelease(scope);', { s7: ['G1-02'] }],
+  ['release sign-offs are listed and can go stale', '[...model.scopes.values()].sort((a, b) => (a.ref < b.ref ? -1 : 1));', "[...model.scopes.values()].filter((s) => s.kind !== 'release').sort((a, b) => (a.ref < b.ref ? -1 : 1));", { s7: ['G1-04'] }],
+  ['the release fingerprint covers every member', 'members.map((m) => [m.scope, m.fingerprint])])); // invariant:release-fingerprint', '[]])); // invariant:release-fingerprint', { s7: ['G1-04'] }],
+  ['members disagreeing on a candidate build conflict', 'if (ids.length > 1) return { surface, build_id: null', 'if (false) return { surface, build_id: null', { s7: ['G1-05'] }],
+  ['a release-level blocker makes the release NOT_READY', "const verdict = ownBlocked || members.some(", 'const verdict = members.some(', { s7: ['G1-05'] }],
+  ['the artifact carries the bug external_ref', 'external_ref: ownBug?.external_ref ?? null,', 'external_ref: null,', { s7: ['G2-01'] }],
+  ['the artifact records its freshness token', 'freshness_token: ${r.freshness_token}', 'freshness_token: ${r.fingerprint}', { s7: ['G3-03'] }],
+  ['freshness ignores sign-off events', "records.filter((r) => r.field !== 'signoffs').map((r) => r.hash); // invariant:freshness-excludes-signoffs", 'records.map((r) => r.hash); // invariant:freshness-excludes-signoffs', { s7: ['G3-02'] }],
+  ['freshness watches bugs related to the scope', ".some((r) => (r.kind === 'bug.reported'", '.some((r) => false && (r.kind === \'bug.reported\'', { s7: ['G3-01'] }],
+  ['freshness watches the scope’s own runs', 'db.runs.filter((run) => watched.has(header(run).scope) || bugs.has(header(run).bug_ref)); // invariant:freshness-runs', 'db.runs.filter((run) => false); // invariant:freshness-runs', { s7: ['G3-01'] }],
+  ['freshness watches builds related to the scope', 'if ((b.related_scopes ?? []).includes(ref) || (b.fixes_claimed ?? []).some((x) => bugs.has(x))) builds.add(id); // invariant:freshness-builds', 'if (false) builds.add(id); // invariant:freshness-builds', { s7: ['G3-01'] }],
+  ['freshness covers plan content', "return [p, fs.existsSync(f) ? sha(fs.readFileSync(f)) : 'missing']; // invariant:freshness-plans", "return [p, 'missing']; // invariant:freshness-plans", { s7: ['G3-01'] }],
+  ['every artifact is sealed with its integrity hash', 'return sealArtifact(renderUnsealed(r));', 'return renderUnsealed(r);', { s7: ['G4-01'] }],
+  ['the integrity hash covers the whole artifact', 'artifact_integrity: ${sha(text)}${text.slice(end)}`; // invariant:artifact-integrity', 'artifact_integrity: ${sha(text.slice(0, end))}${text.slice(end)}`; // invariant:artifact-integrity', { s7: ['G4-02'] }],
+  ['the integrity hash is over the unsealed content', 'artifact_integrity: ${sha(text)}${text.slice(end)}`; // invariant:artifact-integrity', 'artifact_integrity: ${sha(`${text}\\n`)}${text.slice(end)}`; // invariant:artifact-integrity', { s7: ['G4-01'] }],
+  ['a release token covers its members’ tokens', 'members: members.map((m) => [m, scopeToken(root, db, m)])', 'members', { s7: ['G3-02'] }],
 ];
 
 function copyHelper(dir, mutate = (src) => src) {

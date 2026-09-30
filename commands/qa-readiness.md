@@ -3,7 +3,7 @@ description: Compute the deterministic QA readiness of a feature, a standalone b
 argument-hint: [feature-name | bug-id | release:<id>] [--qa-repo=path?]
 ---
 
-Compute QA readiness for the scope in `$ARGUMENTS`: `feature:<slug>`, `bug:<id>`, or `release:<id>`. A release scope only aggregates its members' readiness.
+Compute QA readiness for the scope in `$ARGUMENTS`: `feature:<slug>`, `bug:<id>`, or `release:<id>`. A release scope aggregates its members' readiness.
 
 The verdict is computed by the helper from facts already in the ledger (`docs/qa-readiness-contract.md`). Never judge readiness yourself, and never soften a verdict.
 
@@ -32,6 +32,6 @@ All reads and writes go through `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa-ledger.m
    `readiness except --scope <scope> --item <blocker-id> --kind known_issue|limitation|waived_regression|waived_debt|waiver --reason "…" --approved-by "<name>" [--build <b>]`
 
    Only when every blocker is excepted does the verdict become READY_WITH_EXCEPTIONS.
-6. Write the report: `readiness render --scope <scope>` writes `readiness/<kind>/<id>.md`. It's a deterministic, derived view with the per-surface matrix, smoke, functional, regression, bugs, re-tests, debt, exceptions, known issues, tested builds, QA notes and Release Notes input. Never edit it by hand. A release scope has no report; its aggregate is shown in step 2 only.
+6. Write the report: `readiness render --scope <scope>` writes `readiness/<kind>/<id>.md`. It's a deterministic, derived view with the per-surface matrix, smoke, functional, regression, bugs, re-tests, debt, exceptions, known issues, tested builds, QA notes and Release Notes input. Never edit it by hand. A release scope writes `readiness/release/<id>.md`, with a Members table and the aggregated blockers, exceptions, known issues and builds. Each artifact carries a freshness token and an `artifact_integrity` hash. Re-render after any ledger change, or a release tool will reject the artifact as outdated. Any hand edit makes the artifact tampered.
 7. Sign-off is a separate, explicit step: `/qa-signoff`.
 8. Never run `git add`/`commit`/`push` in the QA repo. Tell the human to review and commit manually.

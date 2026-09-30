@@ -18,7 +18,7 @@ All writes go through `node "${CLAUDE_PLUGIN_ROOT}/scripts/qa-ledger.mjs" <comma
 1. Resolve the scope and the QA repo. See "Resolving the workspace" in `create-qa-test-plan.md`.
 2. Run `view readiness --scope <scope>` and show the verdict, blockers and exceptions.
    - A `NOT_READY` scope can't be signed off (`SIGNOFF_NOT_READY`); point to `/qa-readiness`.
-   - A release scope only aggregates (`RELEASE_AGGREGATION_ONLY`); sign off its member scopes.
+   - A release scope can be signed off like any scope, once its aggregated verdict isn't NOT_READY. Its pins, exceptions and debt discharges belong to its members (`RELEASE_AGGREGATION_ONLY`).
 3. Ask the human to confirm they are signing off this exact verdict. Ask for their name and optional notes.
 4. Record it: `readiness signoff --scope <scope> --by "<name>" [--notes "…"]`. This records the sign-off, with its id, verdict, fingerprint, notes and who, and when (the event time). It also regenerates `readiness/<kind>/<id>.md`.
 5. To check later whether a sign-off still holds, run `view signoffs --scope <scope>`. Each sign-off shows as `valid`, `stale` or `superseded`. `view signoffs` without a scope lists every stale sign-off.

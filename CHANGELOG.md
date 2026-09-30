@@ -77,6 +77,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Release scopes:** only aggregate their members. There is no release artifact and no Release integration.
   - **Ledger changes:** additive, managed context fields `candidate_builds`, `exceptions`, `debt_discharges`, `signoffs`; `MANAGED_FIELD` for a generic write to them.
   - **Tests:** `scripts/qa-readiness.test.mjs` (27), and 24 new mutants (every rule, exception matching, the verdict, fingerprint coverage, sign-off validity).
+- QA readiness follow-up for Release integration (`qa_readiness_schema: 2`):
+  - **Release artifact:** a `release:<id>` scope renders the signable `readiness/release/<id>.md`. It has a Members table and aggregated blockers, exceptions, known issues, candidate builds (a member conflict on a surface blocks the release) and tested builds, and it goes stale automatically when any member changes.
+  - **Bug identity:** artifacts carry `dev_feature`, `qa_bug_id` and `external_ref`. Either bug identifier may be absent, and the contract states the matching rules a consumer follows.
+  - **Freshness token:** artifacts carry `freshness_token`, a derivation-free digest over the ledger records the verdict could read. The contract specifies how to recompute it, so a release tool can reject an artifact rendered from an outdated ledger. It uses no timestamps and needs no ledger change.
+  - **Artifact integrity:** every artifact ends its frontmatter with `artifact_integrity`, sha256 over the complete rendered artifact without that line. A consumer recomputes it and rejects an artifact edited after rendering. This check is separate from ledger freshness.
+  - **Tests:** `scripts/qa-release-readiness.test.mjs` (12), and 17 new mutants.
 
 ## [0.7.0] - 2026-08-25
 

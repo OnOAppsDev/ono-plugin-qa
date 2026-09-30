@@ -594,19 +594,19 @@ function cmdRegressionDecide(store, o) {
 
 // ---------- QA readiness + sign-off (Stage 6) ----------
 
-function readinessTarget(store, ref) {
+// Pins, exceptions and discharges are member-level; a release scope may be signed off.
+function readinessTarget(store, ref, { release = false } = {}) {
   const s = parseScopeRef(ref);
   const model = loadForWrite(store, s.ref);
   if (!model.scopes.has(s.ref)) fail('UNKNOWN_SCOPE', `scope ${s.ref} does not exist`);
   const scope = model.scopes.get(s.ref);
-  requireNonRelease(scope);
+  if (!release) requireNonRelease(scope);
   return { s, model, scope };
 }
 const appendTo = (store, scope, body) => appendEvent(store, ['scopes', scope.kind, `${scope.ref.slice(scope.kind.length + 1)}.jsonl`], scope.events, body);
 
 function renderReadiness(store, ref) {
   const r = computeReadiness(store.root, loadForRead(store), ref);
-  if (r.kind === 'release') fail('RELEASE_AGGREGATION_ONLY', `${ref} is aggregated in view readiness; no readiness artifact is written for a release scope`);
   const [kind, id] = [r.kind, r.scope.slice(r.kind.length + 1)];
   store.writeDerived(['readiness', kind, `${id}.md`], renderReadinessMarkdown(r));
   return { rendered: `readiness/${kind}/${id}.md`, verdict: r.verdict, fingerprint: r.fingerprint };
@@ -646,7 +646,7 @@ function cmdReadinessDischarge(store, o) {
 
 // Sign-off pins the verdict and fingerprint of the readiness computed right now.
 function cmdReadinessSignoff(store, o) {
-  const { model, scope } = readinessTarget(store, o.scope);
+  const { model, scope } = readinessTarget(store, o.scope, { release: true });
   const r = computeReadiness(store.root, model, scope.ref);
   if (r.verdict === 'NOT_READY') fail('SIGNOFF_NOT_READY', `${scope.ref} is NOT_READY — resolve or explicitly except its blockers first`, { blockers: r.blockers.filter((b) => !b.excepted_by).map((b) => b.id) }); // invariant:signoff-needs-ready
   const n = scope.events.filter((e) => e.kind === 'context.add' && e.field === 'signoffs').length + 1;

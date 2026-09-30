@@ -13,8 +13,12 @@ import { orderedBuilds, runOrder, scopeBuildIds, decisionsOf, requireScope } fro
 import { smokeStatus, viewExecution } from './execution.mjs';
 import { viewRegression } from './regression.mjs';
 import { bugReport, deriveBug } from './bugs.mjs';
+import { freshnessToken } from './freshness.mjs';
 
-export const READINESS_SCHEMA = 1;
+// Schema 2 (Stage 7 follow-up): adds freshness_token, dev_feature, qa_bug_id, external_ref,
+// and the release artifact (member_count + Members). Schema-1 artifacts carry no freshness
+// token, so a consumer cannot prove them current.
+export const READINESS_SCHEMA = 2;
 export const VERDICTS = ['READY', 'READY_WITH_EXCEPTIONS', 'NOT_READY'];
 export const BLOCKING_SEVERITIES = ['critical', 'major'];
 export const EXCEPTION_KINDS = ['known_issue', 'limitation', 'waived_regression', 'waived_debt', 'waiver'];
@@ -269,6 +273,7 @@ export function computeReadiness(root, model, ref) {
   const testedBuilds = [...new Set(runOrder(model).filter((r) => r.header.scope === s.ref || e.bugs.some((b) => b.bug === r.header.bug_ref)).map((r) => r.header.build_id))];
   const current = { verdict, fingerprint };
   const signoffs = signoffsOf(scope, current);
+  const ownBug = scope.kind === 'bug' ? e.bugs.find((b) => b.bug === s.ref) : null;
   return {
     scope: s.ref,
     kind: scope.kind,
@@ -288,37 +293,68 @@ export function computeReadiness(root, model, ref) {
     debt: e.debt,
     tested_builds: testedBuilds,
     dev_feature: scope.context.dev_handoff?.feature ?? null,
+    // Bug identity: the QA id and the bug's external_ref — either may be absent.
+    qa_bug_id: ownBug ? s.ref.slice('bug:'.length) : null,
+    external_ref: ownBug?.external_ref ?? null,
     fingerprint,
+    freshness_token: freshnessToken(root, s.ref),
     generated_at: latestAt(records),
     consumed: records.length,
     signoff: signoffs.at(-1) ?? null,
   };
 }
 
+// Per surface, the members' candidates must agree; disagreeing members block the release.
+function releaseCandidates(members) {
+  const surfaces = [...new Set(members.flatMap((m) => m.candidate_builds.map((c) => c.surface)))].sort();
+  return surfaces.map((surface) => {
+    const cs = members.flatMap((m) => m.candidate_builds.filter((c) => c.surface === surface && c.build_id));
+    const ids = [...new Set(cs.map((c) => c.build_id))].sort();
+    if (ids.length > 1) return { surface, build_id: null, pinned: false, conflict: ids }; // invariant:release-candidate-conflict
+    return { surface, build_id: ids[0] ?? null, pinned: cs.some((c) => c.pinned) };
+  });
+}
+
 function releaseReadiness(root, model, scope) {
   const members = (scope.context.members ?? []).map((m) => computeReadiness(root, model, m));
+  const candidates = releaseCandidates(members);
   const blockers = [];
   if (!members.length) blockers.push({ id: 'RELEASE:no-members', rule: 'RELEASE', message: 'the release scope has no member scopes' });
+  for (const c of candidates) if (c.conflict) blockers.push({ id: `RELEASE:candidate-conflict:${c.surface}`, rule: 'RELEASE', surface: c.surface, message: `members disagree on the ${c.surface} candidate build (${c.conflict.join(', ')})` });
+  const ownBlocked = blockers.length > 0;
   for (const m of members) for (const b of m.blockers) blockers.push({ ...b, member: m.scope });
-  const verdict = !members.length || members.some((m) => m.verdict === 'NOT_READY') ? 'NOT_READY' : members.some((m) => m.verdict === 'READY_WITH_EXCEPTIONS') ? 'READY_WITH_EXCEPTIONS' : 'READY';
-  const own = scope.events.filter((r) => r.field !== SIGNOFF_FIELD).map((r) => [`scope:${scope.ref}:${r.seq}`, r.hash]);
+  const verdict = ownBlocked || members.some((m) => m.verdict === 'NOT_READY') ? 'NOT_READY' : members.some((m) => m.verdict === 'READY_WITH_EXCEPTIONS') ? 'READY_WITH_EXCEPTIONS' : 'READY'; // invariant:release-verdict
+  const ownEvents = scope.events.filter((r) => r.field !== SIGNOFF_FIELD);
+  const own = ownEvents.map((r) => [`scope:${scope.ref}:${r.seq}`, r.hash]);
+  const fingerprint = sha(canonical([own, members.map((m) => [m.scope, m.fingerprint])])); // invariant:release-fingerprint
+  const signoffs = signoffsOf(scope, { verdict, fingerprint });
+  const seenBugs = new Set();
   return {
     scope: scope.ref,
     kind: 'release',
     verdict,
-    members: members.map((m) => ({ scope: m.scope, verdict: m.verdict, fingerprint: m.fingerprint, blocker_count: m.blockers.filter((b) => !b.excepted_by).length })),
+    members: members.map((m) => ({ scope: m.scope, kind: m.kind, verdict: m.verdict, fingerprint: m.fingerprint, blocker_count: m.blockers.filter((b) => !b.excepted_by).length, dev_feature: m.dev_feature, qa_bug_id: m.qa_bug_id, external_ref: m.external_ref })),
     blockers,
     exceptions: members.flatMap((m) => m.exceptions.filter((x) => x.applied).map((x) => ({ ...x, member: m.scope }))),
     known_issues: members.flatMap((m) => m.known_issues.map((x) => ({ ...x, member: m.scope }))),
+    candidate_builds: candidates,
+    surfaces: candidates.map((c) => ({ surface: c.surface, candidate_build: c.build_id, pinned: c.pinned, members: members.filter((m) => m.candidate_builds.some((x) => x.surface === c.surface)).map((m) => m.scope) })),
+    bugs: members.flatMap((m) => m.bugs.map((b) => ({ ...b, member: m.scope }))).filter((b) => !seenBugs.has(b.bug) && seenBugs.add(b.bug)),
     tested_builds: [...new Set(members.flatMap((m) => m.tested_builds))],
-    fingerprint: sha(canonical([own, members.map((m) => [m.scope, m.fingerprint])])),
+    dev_feature: null,
+    qa_bug_id: null,
+    external_ref: null,
+    fingerprint,
+    freshness_token: freshnessToken(root, scope.ref),
+    generated_at: [...members.map((m) => m.generated_at), ...ownEvents.map((r) => r.at)].filter(Boolean).sort().at(-1) ?? null,
+    signoff: signoffs.at(-1) ?? null,
   };
 }
 
 // ---------- write-time checks for the readiness commands ----------
 
 export function requireNonRelease(scope) {
-  if (scope.kind === 'release') fail('RELEASE_AGGREGATION_ONLY', `${scope.ref} only aggregates its members' readiness — pins, exceptions and sign-offs belong to the member scopes`);
+  if (scope.kind === 'release') fail('RELEASE_AGGREGATION_ONLY', `${scope.ref} only aggregates its members' readiness — pins, exceptions and debt discharges belong to the member scopes`);
 }
 
 export function pinValue(model, scope, o, surfaces) {
@@ -360,7 +396,7 @@ export function readinessErrors(model) {
 // ---------- views ----------
 
 export function viewSignoffs(root, model, o) {
-  const scopes = o.scope ? [model.scopes.get(requireScope(model, o.scope).ref)] : [...model.scopes.values()].filter((s) => s.kind !== 'release').sort((a, b) => (a.ref < b.ref ? -1 : 1));
+  const scopes = o.scope ? [model.scopes.get(requireScope(model, o.scope).ref)] : [...model.scopes.values()].sort((a, b) => (a.ref < b.ref ? -1 : 1));
   const all = [];
   for (const s of scopes) {
     if (!eventsOf(s, SIGNOFF_FIELD).length) continue;
@@ -375,21 +411,38 @@ export function viewSignoffs(root, model, o) {
 const cell = (v) => (v === null || v === undefined || v === '' ? '—' : String(v).replace(/\|/g, '\\|').replace(/\n/g, ' '));
 const table = (head, rows) => (rows.length ? [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`)].join('\n') : 'None.');
 
+// Tamper evidence (contract "Artifact integrity"): sha256 over the rendered artifact without
+// its artifact_integrity line, which is then added as the last frontmatter line. Removing
+// that one line from the published file gives back exactly the bytes that were hashed.
+function sealArtifact(text) {
+  const end = text.indexOf('\n---\n', 4);
+  return `${text.slice(0, end)}\nartifact_integrity: ${sha(text)}${text.slice(end)}`; // invariant:artifact-integrity
+}
+
 // Deterministic: every value comes from the ledger (generated_at is the latest consumed
 // record's time), so the same ledger always renders the same bytes.
 export function renderReadinessMarkdown(r) {
+  return sealArtifact(renderUnsealed(r));
+}
+
+function renderUnsealed(r) {
   const so = r.signoff;
   const fm = [
     '---',
     `qa_readiness_schema: ${READINESS_SCHEMA}`,
     `scope: ${r.scope}`,
     `scope_kind: ${r.kind}`,
+    `dev_feature: ${r.dev_feature ?? 'null'}`,
+    `qa_bug_id: ${r.qa_bug_id ?? 'null'}`,
+    `external_ref: ${r.external_ref ?? 'null'}`,
+    ...(r.kind === 'release' ? [`member_count: ${r.members.length}`] : []),
     'candidate_builds:',
     ...(r.candidate_builds.length ? r.candidate_builds.map((c) => `  - ${c.surface}: ${c.build_id ?? 'null'}${c.pinned ? ' # pinned' : ''}`) : ['  []']),
     `verdict: ${r.verdict}`,
     `blocker_count: ${r.blockers.filter((b) => !b.excepted_by).length}`,
     `exception_count: ${r.exceptions.filter((x) => x.applied).length}`,
     `fingerprint: ${r.fingerprint}`,
+    `freshness_token: ${r.freshness_token}`,
     `generated_at: ${r.generated_at ?? 'null'}`,
     `signed_off_by: ${so?.signed_by ?? 'null'}`,
     `signed_off_date: ${so?.signed_at ?? 'null'}`,
@@ -397,6 +450,7 @@ export function renderReadinessMarkdown(r) {
     `signoff_status: ${so?.status ?? 'none'}`,
     '---',
   ];
+  if (r.kind === 'release') return `${fm.join('\n')}\n\n${releaseBody(r).join('\n\n')}\n`;
   const bugLines = r.bugs;
   const body = [
     `# QA Readiness — ${r.scope}`,
@@ -438,4 +492,55 @@ export function renderReadinessMarkdown(r) {
     ].join('\n'),
   ];
   return `${fm.join('\n')}\n\n${body.join('\n\n')}\n`;
+}
+
+// The release artifact: the same contract sections, aggregated from the members. Member
+// exception ids are qualified (<member>#EX-n); per-scope detail stays in member artifacts.
+function releaseBody(r) {
+  const so = r.signoff;
+  const applied = r.exceptions;
+  const q = (x, v) => `${x.member}#${v}`;
+  const seeMembers = 'Per member — see each member scope’s readiness artifact.';
+  return [
+    `# QA Readiness — ${r.scope}`,
+    '> Generated from the QA ledger — a derived view, never read back. Regenerate with `qa-ledger.mjs readiness render`.',
+    `**Verdict: ${r.verdict}**`,
+    '## Members',
+    table(['Scope', 'Kind', 'Dev feature', 'QA bug id', 'External ref', 'Verdict', 'Fingerprint'], r.members.map((m) => [m.scope, m.kind, m.dev_feature, m.qa_bug_id, m.external_ref, m.verdict, m.fingerprint])),
+    '## Blockers',
+    table(['Blocker', 'Member', 'Rule', 'Detail', 'Exception'], r.blockers.map((b) => [b.id, b.member, b.rule, b.message, b.excepted_by ? q(b, b.excepted_by) : null])),
+    '## Per-Surface Matrix',
+    table(['Surface', 'Candidate build', 'Pinned', 'Members'], r.surfaces.map((s) => [s.surface, s.candidate_build, s.pinned ? 'yes' : 'no', s.members.join(', ')])),
+    '## Smoke',
+    seeMembers,
+    '## Functional',
+    seeMembers,
+    '## Regression',
+    seeMembers,
+    '## Bugs',
+    table(['Bug', 'Severity', 'State', 'Fixed in'], r.bugs.map((b) => [b.bug, b.severity, b.state, b.fixed_in_build])),
+    '## Retests',
+    table(['Bug', 'Build', 'Surface', 'Outcome'], r.bugs.flatMap((b) => b.retests.map((t) => [b.bug, t.build_id, t.surface, t.outcome]))),
+    '## QA Debt',
+    seeMembers,
+    '## Exceptions',
+    table(['Exception', 'Item', 'Kind', 'Reason', 'Approved by', 'Date', 'Build', 'Applied'], applied.map((x) => [q(x, x.id), x.item, x.kind, x.reason, x.approved_by, x.date, x.build_id, 'yes'])),
+    '## Known Issues',
+    table(['Item', 'Reason', 'Approved by'], r.known_issues.map((x) => [q(x, x.item), x.reason, x.approved_by])),
+    '## Tested Builds',
+    r.tested_builds.length ? r.tested_builds.map((b) => `- ${b}`).join('\n') : 'None.',
+    '## QA Notes',
+    so?.notes ?? '—',
+    '## Release Notes Input',
+    [
+      `- Scope: ${r.scope}`,
+      `- Features tested: ${r.members.filter((m) => m.kind === 'feature').map((m) => (m.dev_feature ? `${m.scope} (Dev feature ${m.dev_feature})` : m.scope)).join(', ') || 'none'}`,
+      `- Bug fixes verified: ${r.bugs.filter((b) => b.state === 'closed_verified').map((b) => `${b.bug} (fixed in ${b.fixed_in_build})`).join(', ') || 'none'}`,
+      `- Builds tested: ${r.tested_builds.join(', ') || 'none'}`,
+      `- Surfaces tested: ${r.surfaces.map((s) => s.surface).join(', ') || 'none'}`,
+      `- Known issues: ${r.known_issues.map((x) => `${q(x, x.item)} — ${x.reason}`).join('; ') || 'none'}`,
+      `- Exceptions: ${applied.map((x) => `${q(x, x.id)} ${x.item} (${x.kind})`).join('; ') || 'none'}`,
+      `- QA verdict: ${r.verdict}`,
+    ].join('\n'),
+  ];
 }
