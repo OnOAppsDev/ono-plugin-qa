@@ -4,7 +4,7 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.9.0] - 2026-10-12
+## [0.9.0] - 2026-10-13
 
 Test-case writing rules from the QA team, after running the plugin on real features.
 
