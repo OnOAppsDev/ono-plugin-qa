@@ -15,10 +15,21 @@ if (!inputPath || !outputPath) {
 const data = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
 const groups = Array.isArray(data.groups) ? data.groups : [];
 
-const HEADERS = ['Test ID', 'Summary', 'Action', 'Expected Result', 'Test Data / Parameter', 'Comments'];
+const HEADERS = ['Test ID', 'Summary', 'Action', 'Expected Result', 'Test Data/Parameter', 'Comments'];
+const WIDTHS = [11, 40, 58, 62, 42, 46];
+
+// One soft color family, a lighter shade per header level. Text colors were picked
+// for at least 4.5:1 contrast (WCAG AA); qa-ledger.test.mjs re-checks every pair from the built file.
+const PALETTE = {
+  header: { fill: '4A6FA5', text: 'FFFFFF' }, // column header row
+  group: { fill: 'B4C7E7', text: '000000' }, // section rows
+  subgroup: { fill: 'DCE6F2', text: '000000' }, // sub-section rows
+};
+
 const STYLE_HEADER = 1;
 const STYLE_GROUP = 2;
-const STYLE_DATA = 3;
+const STYLE_SUBGROUP = 3;
+const STYLE_DATA = 4;
 
 function esc(str) {
   return String(str)
@@ -51,34 +62,48 @@ function cell(ref, value, styleIdx) {
   return `<c r="${ref}" s="${styleIdx}" t="inlineStr"><is><t xml:space="preserve">${esc(value)}</t></is></c>`;
 }
 
+// Steps are numbered here ("1. …"); a number the author already wrote is dropped first.
+function actionText(action) {
+  const steps = Array.isArray(action) ? action : String(action || '').split('\n').filter(Boolean);
+  return steps.map((step, i) => `${i + 1}. ${String(step).replace(/^\s*(?:שלב\s*)?\d+\s*[.:)]\s*/, '')}`).join('\n');
+}
+
+// ponytail: line count estimated from character count per column width; switch to real text metrics if rows get cut off
+function rowHeight(values) {
+  const lines = Math.max(...values.map((v, i) => String(v || '').split('\n')
+    .reduce((n, line) => n + Math.max(1, Math.ceil(line.length / (WIDTHS[i] - 3))), 0)));
+  return Math.min(409, lines * 16 + 16); // Excel's maximum row height
+}
+
 let rowsXml = '';
 let rowNum = 1;
 const merges = [];
 
-rowsXml += `<row r="${rowNum}">${HEADERS.map((h, i) => cell(`${colLetter(i + 1)}${rowNum}`, h, STYLE_HEADER)).join('')}</row>`;
+function titleRow(title, style, height) {
+  const cells = ['A', 'B', 'C', 'D', 'E', 'F'].map((col, i) => cell(`${col}${rowNum}`, i === 0 ? title || '' : '', style)).join('');
+  rowsXml += `<row r="${rowNum}" ht="${height}" customHeight="1">${cells}</row>`;
+  merges.push(`A${rowNum}:F${rowNum}`);
+  rowNum++;
+}
+
+function dataRows(rows) {
+  for (const row of rows || []) {
+    const values = ['', row.summary || '', actionText(row.action), row.expected || '', row.testData || '', row.comments || ''];
+    const cells = values.map((v, i) => cell(`${colLetter(i + 1)}${rowNum}`, v, STYLE_DATA)).join('');
+    rowsXml += `<row r="${rowNum}" ht="${rowHeight(values)}" customHeight="1">${cells}</row>`;
+    rowNum++;
+  }
+}
+
+rowsXml += `<row r="${rowNum}" ht="32" customHeight="1">${HEADERS.map((h, i) => cell(`${colLetter(i + 1)}${rowNum}`, h, STYLE_HEADER)).join('')}</row>`;
 rowNum++;
 
 for (const group of groups) {
-  const groupRow = rowNum;
-  const groupCells = ['A', 'B', 'C', 'D', 'E', 'F']
-    .map((col, i) => (i === 0 ? cell(`${col}${groupRow}`, group.title || '', STYLE_GROUP) : cell(`${col}${groupRow}`, '', STYLE_GROUP)))
-    .join('');
-  rowsXml += `<row r="${groupRow}">${groupCells}</row>`;
-  merges.push(`A${groupRow}:F${groupRow}`);
-  rowNum++;
-
-  for (const row of group.rows || []) {
-    const actionText = Array.isArray(row.action) ? row.action.join('\n') : String(row.action || '');
-    const cells = [
-      cell(`A${rowNum}`, '', STYLE_DATA),
-      cell(`B${rowNum}`, row.summary || '', STYLE_DATA),
-      cell(`C${rowNum}`, actionText, STYLE_DATA),
-      cell(`D${rowNum}`, row.expected || '', STYLE_DATA),
-      cell(`E${rowNum}`, row.testData || '', STYLE_DATA),
-      cell(`F${rowNum}`, row.comments || '', STYLE_DATA),
-    ].join('');
-    rowsXml += `<row r="${rowNum}">${cells}</row>`;
-    rowNum++;
+  titleRow(group.title, STYLE_GROUP, 30);
+  dataRows(group.rows);
+  for (const sub of group.subgroups || []) {
+    titleRow(sub.title, STYLE_SUBGROUP, 26);
+    dataRows(sub.rows);
   }
 }
 
@@ -90,32 +115,33 @@ const mergeCellsXml = merges.length
 const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <dimension ref="A1:F${lastRow}"/>
-<sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews>
-<sheetFormatPr defaultRowHeight="15"/>
+<sheetViews><sheetView rightToLeft="1" showGridLines="0" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>
+<sheetFormatPr defaultRowHeight="16"/>
 <cols>
-<col min="1" max="1" width="12" customWidth="1"/>
-<col min="2" max="2" width="30" customWidth="1"/>
-<col min="3" max="3" width="45" customWidth="1"/>
-<col min="4" max="4" width="35" customWidth="1"/>
-<col min="5" max="5" width="20" customWidth="1"/>
-<col min="6" max="6" width="25" customWidth="1"/>
+${WIDTHS.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('\n')}
 </cols>
 <sheetData>${rowsXml}</sheetData>
 ${mergeCellsXml}
 </worksheet>`;
 
+const fill = (hex) => `<fill><patternFill patternType="solid"><fgColor rgb="FF${hex}"/><bgColor indexed="64"/></patternFill></fill>`;
+const font = (bold, size, hex) => `<font>${bold ? '<b/>' : ''}<sz val="${size}"/><color rgb="FF${hex}"/><name val="Arial"/></font>`;
+const titleAlign = '<alignment horizontal="right" vertical="center" wrapText="1" readingOrder="2" indent="1"/>';
+
 const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts>
-<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/><bgColor indexed="64"/></patternFill></fill></fills>
-<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+<fonts count="4">${font(false, 11, '000000')}${font(true, 12, PALETTE.header.text)}${font(true, 12, PALETTE.group.text)}${font(true, 12, PALETTE.subgroup.text)}</fonts>
+<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fill(PALETTE.header.fill)}${fill(PALETTE.group.fill)}${fill(PALETTE.subgroup.fill)}</fills>
+<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border>${['left', 'right', 'top', 'bottom'].map((side) => `<${side} style="thin"><color rgb="FFD0D0D0"/></${side}>`).join('')}<diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="4">
+<cellXfs count="5">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="right" vertical="top" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1" readingOrder="2"/></xf>
+<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">${titleAlign}</xf>
+<xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">${titleAlign}</xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="top" wrapText="1" readingOrder="2" indent="1"/></xf>
 </cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
 const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

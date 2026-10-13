@@ -4,6 +4,25 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.0] - 2026-10-12
+
+Test-case writing rules from the QA team, after running the plugin on real features.
+
+### Added
+- `qa-test-case-writing` skill, used by `qa-test-designer` and `qa-test-plan-syncer` for every test case they write or rewrite: full navigation path from login, fixed Hebrew vocabulary, preconditions in Test Data, a table of banned vague expected results, one scenario per row, the split-vs-repeat rule, deterministic test data, the undefined-behavior policy (`לא מוגדר באיפיון: … צפי סביר: …` in Comments), hypothetical failure tests with no simulation step, request checks via a read-only logger (`אימות בלוגר`), required cases per data-rule type, a mandatory general edge-case checklist, the Figma static-text comparison, and a final review.
+- `templates/app-knowledge-template.md` — one `app-knowledge.md` per QA repo with screens and their exact navigation paths, what the tester can control, flags and QA notes. Planning and sync read it first and keep it updated with what the sources state.
+- Test plan sections: **Error Screens** (`ERR<n>`), **API Failures (Hypothetical)** (`API<n>`, under Edge Cases) and an **Edge-Case Checklist Report**. Functional cases get one sub-section per screen.
+
+### Changed
+- **Test plan tables** gain `test data` and `comments` columns. `/sync-qa-test-plan` brings an older plan up to the new structure and says so in the Change Log. Every row changes, so an approved plan goes back to `draft` and needs re-approval, and any execution result already recorded against it becomes stale — sync asks before upgrading a plan that has results.
+- **`test-cases.xlsx` styling:** header `Test Data/Parameter`, column widths 11/40/58/62/42/46, Arial 12/11, borders, frozen header row, hidden gridlines. One color family with a lighter shade per header level (every level at least 4.5:1). Optional sub-section rows (`subgroups` in the JSON). Row heights sized to the text. Steps numbered `1.`, `2.`, … by the builder.
+- `qa-assistant-guidelines`: stop after 2 failed attempts and propose an alternative; reply in the human's language.
+- `/report-bug`: describe screens by their visible title and give the full navigation path.
+- `automation-test-writer` reads the new sections; hypothetical rows become `it.skip()` with the reason.
+- `qa-coverage-reviewer` / `qa-coverage-analysis` also match against Error Screens.
+- `/set-qa-scope` offers to exclude hypothetical cases (`API<n>`) per surface, so they don't block readiness.
+- `/define-smoke-suite` keeps a copied plan row's test data, as a first `Test data: …` line in its steps.
+
 ## [0.8.0] - 2026-09-30
 
 ### Added
