@@ -25,41 +25,61 @@ date: # YYYY-MM-DD
 <!-- Every distinct screen, frame, and state (loading/empty/error/success/permission-prompt/validation) found across the sources above for this feature, with the frame name/link or spec section. /check-qa-coverage matches this against the dev handoff's "Screens & Flows Touched" — keep it complete and specific. -->
 ## Screens & Flows Covered
 
-<!-- Numbered functional test cases, each traceable to a specific screen/flow above, naming actual button/label text from the design or behavior from the spec. -->
+<!-- Every test case below follows the qa-test-case-writing skill: steps start with logging in and spell out the full navigation path, preconditions go in "test data" (never in "steps"), expected results are concrete and verifiable, undefined behavior goes in "comments" per its policy. "test data" and "comments" may be empty. -->
+<!-- Functional test cases, one ### sub-section per screen/flow in navigation order (with further sub-sections for that screen's popups, drawers and save bar when useful), each naming actual button/label text from the design or behavior from the spec. -->
 ## Functional Test Cases
 
-| id | screen/flow | steps | expected result |
-|---|---|---|---|
-| TC1 | | | |
+### <!-- screen/flow -->
 
-<!-- Boundary/negative/error conditions. Split explicit design/spec states from universal cases that apply regardless of source. -->
+| id | screen/flow | steps | expected result | test data | comments |
+|---|---|---|---|---|---|
+| TC1 | | | | | |
+
+<!-- Every error screen in the sources, including ones that appear only in Figma: its structure and every button with its destination. -->
+## Error Screens
+
+| id | screen/flow | steps | expected result | test data | comments |
+|---|---|---|---|---|---|
+| ERR1 | | | | | |
+
+<!-- Boundary/negative/error conditions. "From Design/Spec" includes the required cases per data-rule type; "Universal" covers the general edge-case checklist. -->
 ## Edge Cases & Negative Tests
 
 ### From Design/Spec
 
-| id | screen/flow | steps | expected result |
-|---|---|---|---|
-| EC1 | | | |
+| id | screen/flow | steps | expected result | test data | comments |
+|---|---|---|---|---|---|
+| EC1 | | | | | |
+
+### API Failures (Hypothetical)
+
+<!-- One row per call the feature makes, with no step that causes the failure. "test data" says: hypothetical, relevant only if call X actually fails. -->
+| id | screen/flow | steps | expected result | test data | comments |
+|---|---|---|---|---|---|
+| API1 | | | | | |
 
 ### Universal
 
-| id | screen/flow | steps | expected result |
-|---|---|---|---|
-| EC-U1 | | | |
+| id | screen/flow | steps | expected result | test data | comments |
+|---|---|---|---|---|---|
+| EC-U1 | | | | | |
 
 <!-- Scenario-level checks only — no standard IDs, no reference to standards/ docs. Plain-language, executable-by-eye checks: RTL mirroring, text truncation at long translated strings, number/date formatting. -->
 ## i18n / RTL Test Cases
 
-| id | screen/flow | steps | expected result |
-|---|---|---|---|
-| I18N1 | | | |
+| id | screen/flow | steps | expected result | test data | comments |
+|---|---|---|---|---|---|
+| I18N1 | | | | | |
 
 <!-- Scenario-level checks only, plain language: screen reader label/order, focus order, touch target size, color contrast — as testable steps, not standard citations. -->
 ## Accessibility Test Cases
 
-| id | screen/flow | steps | expected result |
-|---|---|---|---|
-| A11Y1 | | | |
+| id | screen/flow | steps | expected result | test data | comments |
+|---|---|---|---|---|---|
+| A11Y1 | | | | | |
+
+<!-- Every item of the general edge-case checklist in the qa-test-case-writing skill, each "covered in <id>" or "not relevant because …". No item skipped. -->
+## Edge-Case Checklist Report
 
 <!-- What test accounts, environment, feature flags, or seed data this plan assumes will be needed. Authored before dev is done — mark unknowns explicitly. Once dev's handoff exists, its "Test Accounts & Environment" section is the source of truth, not this one. -->
 ## Assumed Test Accounts & Environment

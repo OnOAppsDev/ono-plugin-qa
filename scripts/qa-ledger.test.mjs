@@ -413,10 +413,10 @@ test('13 existing test plans stay byte-identical and are referenced deterministi
 
 // ---------- 14. old flows ----------
 
-function xlsxEntryDigest(file) {
-  // Digest of the decompressed zip entries, so the check survives a zlib upgrade.
+function xlsxEntries(file) {
+  // Decompressed zip entries, so checks survive a zlib upgrade.
   const buf = fs.readFileSync(file);
-  const h = crypto.createHash('sha256');
+  const entries = [];
   let off = 0;
   while (buf.readUInt32LE(off) === 0x04034b50) {
     const method = buf.readUInt16LE(off + 8);
@@ -426,10 +426,26 @@ function xlsxEntryDigest(file) {
     const name = buf.subarray(off + 30, off + 30 + nameLen).toString();
     const start = off + 30 + nameLen + extraLen;
     const data = buf.subarray(start, start + size);
-    h.update(name).update('\0').update(method === 8 ? zlib.inflateRawSync(data) : data).update('\0');
+    entries.push([name, method === 8 ? zlib.inflateRawSync(data) : data]);
     off = start + size;
   }
+  return entries;
+}
+
+function xlsxEntryDigest(file) {
+  const h = crypto.createHash('sha256');
+  for (const [name, data] of xlsxEntries(file)) h.update(name).update('\0').update(data).update('\0');
   return h.digest('hex');
+}
+
+// WCAG contrast ratio between two RRGGBB colors.
+function contrast(a, b) {
+  const lum = (hex) => {
+    const c = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
 }
 
 test('14 existing QA flows are untouched: xlsx export is identical and no old flow calls the ledger', () => {
@@ -437,8 +453,26 @@ test('14 existing QA flows are untouched: xlsx export is identical and no old fl
   const out = path.join(tmp, 'test-cases.xlsx');
   const r = spawnSync(process.execPath, [path.join(HERE, 'build-test-cases-xlsx.mjs'), path.join(HERE, 'fixtures', 'xlsx', 'sample-test-cases.json'), out], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  // Recorded from the unmodified builder at 8ff033c.
-  assert.equal(xlsxEntryDigest(out), 'c5357b43b5ad24f3f2547a70c87a71c3bbe39dab48b040859fb932d004620bf6');
+  // Recorded from the v0.9.0 builder (the QA team's table styling).
+  assert.equal(xlsxEntryDigest(out), '210bd59f5c1e73de572c4017962ad4bf5c4ee2abd5d94c829f7008ea015ebba3');
+  const entries = Object.fromEntries(xlsxEntries(out).map(([n, d]) => [n, d.toString('utf8')]));
+  const sheet = entries['xl/worksheets/sheet1.xml'];
+  assert.match(sheet, /rightToLeft="1" showGridLines="0"/);
+  assert.match(sheet, /<pane ySplit="1" topLeftCell="A2"[^>]*state="frozen"/);
+  assert.match(sheet, />Test Data\/Parameter</);
+  assert.match(sheet, /1\. התחבר לחשבון\n2\. /, 'steps are numbered "1."');
+  assert.ok(!sheet.includes('שלב 1') && !sheet.includes('2. 2.'), 'a step the author already numbered is not numbered twice');
+  assert.equal((sheet.match(/<mergeCell /g) || []).length, 3, 'two section rows and one sub-section row');
+  // Every header level: one fill, black or white bold text, at least 4.5:1.
+  const styles = entries['xl/styles.xml'];
+  const fills = [...styles.matchAll(/<fgColor rgb="FF(\w{6})"/g)].map((m) => m[1]);
+  const headerFonts = [...styles.matchAll(/<font><b\/><sz val="12"\/><color rgb="FF(\w{6})"/g)].map((m) => m[1]);
+  assert.equal(fills.length, 3);
+  assert.equal(headerFonts.length, 3);
+  fills.forEach((fill, i) => {
+    assert.ok(['000000', 'FFFFFF'].includes(headerFonts[i]));
+    assert.ok(contrast(fill, headerFonts[i]) >= 4.5, `header level ${i + 1}: ${headerFonts[i]} on ${fill}`);
+  });
 
   // The lifecycle commands added from Stage 2 on use the ledger by design; every
   // pre-existing command, agent, skill and template must not.

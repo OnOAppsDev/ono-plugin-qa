@@ -1,24 +1,40 @@
 # QA Test Cases — Excel Export Schema
 
-Contract for the Hebrew/RTL Excel export that `/create-qa-test-plan` and `/sync-qa-test-plan` produce alongside `test-plan.md`, as `test-cases.xlsx`. `qa-test-designer` and `qa-test-plan-syncer` populate an intermediate JSON file in this exact shape, then run `scripts/build-test-cases-xlsx.mjs` against it to produce the `.xlsx` file. Column order and content rules below are fixed — do not add, remove, or reorder columns.
+Contract for the Hebrew/RTL Excel export that `/create-qa-test-plan` and `/sync-qa-test-plan` produce alongside `test-plan.md`, as `test-cases.xlsx`. `qa-test-designer` and `qa-test-plan-syncer` populate an intermediate JSON file in this exact shape, then run `scripts/build-test-cases-xlsx.mjs` against it to produce the `.xlsx` file. Column order is fixed — do not add, remove, or reorder columns. **What goes into each cell is governed by the `qa-test-case-writing` skill** (full navigation path, fixed vocabulary, preconditions in Test Data, verifiable expected results, undefined-behavior policy); this file only covers the shape.
 
 ## Column order (A → F)
 
-| Column | Header (English) | Content rules |
+| Column | Header (English) | Content |
 |---|---|---|
-| A | Test ID | Always leave blank. The human QA engineer fills these in by hand — never generate or guess a value here. |
-| B | Summary | 1–2 sentences max, in Hebrew. Since this schema has no separate screen/flow column, naturally fold the originating screen/flow name into the sentence (e.g. "במסך ההתחברות, ..."). |
-| C | Action | Numbered steps in Hebrew, each on its own line **within the same cell** (a literal `\n` between steps, with wrap-text on) — never one run-on line. |
-| D | Expected Result | Hebrew, third person (e.g. "האפליקציה תפתח את העמוד"). |
-| E | Test Data / Parameter | Hebrew. Leave blank unless a special condition applies (e.g. a Firebase feature flag must be enabled). |
-| F | Comments | Hebrew. Leave blank unless something important isn't covered by the other columns. |
+| A | Test ID | Always blank. The tester fills these in by hand — never generate or guess a value here. |
+| B | Summary | 1–2 sentences, Hebrew: what is tested, not how. |
+| C | Action | Hebrew steps, one per line in the same cell. The builder numbers them `1.`, `2.`, … |
+| D | Expected Result | Hebrew, third person, future tense, verifiable. |
+| E | Test Data/Parameter | Hebrew. Blank unless a special condition applies (user, device state, flag, hypothetical failure, `אימות בלוגר`). |
+| F | Comments | Hebrew. Blank unless something important isn't covered by the other columns. |
 
-## Language and formatting rules
+## Language
 
-- All test-case **content** is in Hebrew. Column headers stay in English. English terms with no natural Hebrew equivalent may appear inline, but never mix languages mid-sentence unnecessarily.
-- Translate naturally and idiomatically, the way a native-Hebrew-speaking manual QA tester would phrase it — not a literal machine translation of the English source material.
-- The whole sheet is right-to-left, every data cell is right-aligned, and wrap-text is on so multi-line Action cells render as separate visible lines.
-- Rows are grouped in the same order as `test-plan.md`'s sections — Functional Test Cases → Edge Cases & Negative Tests (From Design/Spec) → Edge Cases & Negative Tests (Universal) → i18n/RTL Test Cases → Accessibility Test Cases — each group preceded by one bold, merged section-header row (in Hebrew) that is not itself a data row and has no Test ID.
+- All content is Hebrew; headers stay in English. English terms with no natural Hebrew equivalent may appear inline, but don't switch languages mid-sentence unnecessarily.
+- Translate naturally and idiomatically, the way a native-Hebrew-speaking manual QA tester would phrase it — not a literal translation of the English plan.
+
+## Groups
+
+One sheet. Groups follow `test-plan.md`'s section order, each as a section row:
+
+1. בדיקות פונקציונליות — one group **per screen/flow**, titled `בדיקות פונקציונליות — מסך "X"`, with sub-sections for that screen's popups, drawers and save bar when the plan has them
+2. מסכי שגיאה
+3. מקרי קצה ובדיקות שליליות (from design/spec)
+4. כשלי API (בדיקות היפותטיות)
+5. מקרי קצה כלליים (universal)
+6. i18n / RTL
+7. נגישות
+
+Omit a group with no rows — never emit a header with nothing under it.
+
+## Styling (applied by the builder — don't override)
+
+One sheet, right-to-left, Arial. Column header row frozen, deepest shade with white text; section rows a lighter shade of the same family; sub-section rows lighter still, both with black text (every level at least 4.5:1 contrast). White body, thin light-gray borders, no gridlines, text right/top aligned and wrapped with an indent, row heights sized to the text. Column widths A 11, B 40, C 58, D 62, E 42, F 46.
 
 ## Intermediate JSON shape
 
@@ -27,22 +43,29 @@ Contract for the Hebrew/RTL Excel export that `/create-qa-test-plan` and `/sync-
   "sheetName": "מקרי בדיקה",
   "groups": [
     {
-      "title": "בדיקות פונקציונליות",
+      "title": "בדיקות פונקציונליות — מסך \"עגלה\"",
       "rows": [
         {
           "summary": "...",
-          "action": ["שלב 1: ...", "שלב 2: ..."],
+          "action": ["התחבר לחשבון", "לחץ על ..."],
           "expected": "...",
           "testData": "",
           "comments": ""
         }
+      ],
+      "subgroups": [
+        { "title": "פופאפ \"הסרת פריט\"", "rows": [] }
       ]
     }
   ]
 }
 ```
 
-- `groups` appears in the section order listed above; omit a group entirely if that section in `test-plan.md` has no rows (don't emit an empty group with just a header).
-- `action` is always an array of one or more Hebrew strings — one per numbered step. The build script joins them with newlines into a single wrapped cell.
-- `testData` and `comments` are empty strings when not applicable — never omit the keys.
-- `summary` and `expected` are single Hebrew strings (no embedded newlines).
+- `action` is an array of Hebrew steps **without numbers** — the builder adds `1.`, `2.`, … (a number already written is dropped, never doubled).
+- `subgroups` is optional; its rows are written after the group's own `rows`.
+- `testData` and `comments` are empty strings when not applicable — never omit the keys. Use `\n` inside them for several conditions.
+- `summary` and `expected` are single Hebrew strings.
+
+## Visual check
+
+If LibreOffice is installed (`soffice`), render the file (`soffice --headless --convert-to pdf`, then to PNG) and look at it before delivering, to confirm styling and readability. If it isn't installed, say the visual check was skipped.

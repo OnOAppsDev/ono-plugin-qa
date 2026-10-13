@@ -95,9 +95,9 @@ claude --plugin-dir /path/to/ono-plugin-qa
 
 | Phase | Command | Skill | Agent |
 |---|---|---|---|
-| 1. Test planning | `/create-qa-test-plan` | `qa-test-planning` | `qa-test-designer` |
+| 1. Test planning | `/create-qa-test-plan` | `qa-test-planning` + `qa-test-case-writing` | `qa-test-designer` |
 | 1. Approval | `/approve-qa-test-plan` | — (frontmatter edit) | — |
-| 1. Sync (as needed) | `/sync-qa-test-plan` | `qa-test-plan-sync` | `qa-test-plan-syncer` |
+| 1. Sync (as needed) | `/sync-qa-test-plan` | `qa-test-plan-sync` + `qa-test-case-writing` | `qa-test-plan-syncer` |
 | 2. Coverage check | `/check-qa-coverage` | `qa-coverage-analysis` | `qa-coverage-reviewer` |
 | 3. Automation | `/generate-automation-scripts` | `automation-test-generation` | `automation-test-writer` |
 | 3. Live verification (optional, as needed) | `/verify-automation-locators` | `appium-live-verification` | `automation-locator-verifier` |
@@ -117,7 +117,11 @@ Both commands resolve the code repo and QA repo paths in this order, stopping to
 3. Auto-detect: list the working directory's immediate subdirectories that contain a `.git` folder. If exactly two are found and exactly one has `qa` in its name, that's the QA repo and the other is the code repo — this mapping is then offered to be cached to `.claude/qa-workspace.json`.
 4. Otherwise — e.g. the current folder is itself a git repo (wrong launch point), or there aren't exactly two identifiable repos — the command stops, explains what it actually found, and asks the human to clarify which folder is which or to relaunch from the correct workspace root.
 
-Within the QA repo, artifacts are organized per feature: `<feature-slug>/test-plan.md`, `<feature-slug>/test-cases.xlsx`, `<feature-slug>/coverage-report.md`, and `<feature-slug>/automation-verification-report.md`. Generated automation lives at the repo root instead, shared across features: `automation/tests/<feature-slug>/`, `automation/pages/`.
+Within the QA repo, artifacts are organized per feature: `<feature-slug>/test-plan.md`, `<feature-slug>/test-cases.xlsx`, `<feature-slug>/coverage-report.md`, and `<feature-slug>/automation-verification-report.md`. Generated automation lives at the repo root instead, shared across features: `automation/tests/<feature-slug>/`, `automation/pages/`. One `app-knowledge.md` at the QA repo root (per `templates/app-knowledge-template.md`) holds what QA knows about the app — screens and their exact navigation paths, what the tester can control (e.g. which backend services), flags, QA notes. Planning and sync read it first and keep it updated.
+
+### How test cases are written
+
+Every test case follows the `qa-test-case-writing` skill, the QA team's own rules: steps start at login and spell out the full navigation path, with a fixed Hebrew vocabulary; preconditions (user, flags, device state) go in Test Data, never in the steps; expected results are concrete and verifiable; behavior the sources don't define goes in Comments (`לא מוגדר באיפיון: … צפי סביר: …`); failures the tester can't trigger are written as hypothetical cases; and every plan reports a general edge-case checklist item by item. Plans have Functional, Error Screens, Edge Cases (from design/spec, API failures, universal), i18n/RTL and Accessibility sections, and every table has `test data` and `comments` columns.
 
 ## Safety hooks
 
@@ -137,9 +141,9 @@ One hook is always active while the plugin is installed:
 | Piece | Contents |
 |---|---|
 | `commands/` | `create-qa-test-plan`, `approve-qa-test-plan`, `sync-qa-test-plan`, `check-qa-coverage`, `generate-automation-scripts`, `verify-automation-locators` |
-| `skills/` | `qa-test-planning`, `qa-test-plan-sync`, `qa-coverage-analysis`, `qa-assistant-guidelines`, `automation-test-generation`, `appium-live-verification` |
+| `skills/` | `qa-test-planning`, `qa-test-case-writing`, `qa-test-plan-sync`, `qa-coverage-analysis`, `qa-assistant-guidelines`, `automation-test-generation`, `appium-live-verification` |
 | `agents/` | `qa-test-designer`, `qa-test-plan-syncer`, `qa-coverage-reviewer`, `automation-test-writer`, `automation-locator-verifier` |
-| `templates/` | `qa-test-plan-template.md`, `qa-coverage-report-template.md`, `qa-test-cases-xlsx-schema.md`, `appium-test-spec-template.js`, `automation-project-scaffold/`, `automation-verification-report-template.md` |
+| `templates/` | `qa-test-plan-template.md`, `app-knowledge-template.md`, `qa-coverage-report-template.md`, `qa-test-cases-xlsx-schema.md`, `appium-test-spec-template.js`, `automation-project-scaffold/`, `automation-verification-report-template.md` |
 | `scripts/` | `build-test-cases-xlsx.mjs` — zero-dependency Node OOXML writer for the Hebrew/RTL Excel export; `qa-ledger.mjs` — the QA ledger helper (see below) |
 | `docs/` | `qa-ledger-contract.md`, `qa-readiness-contract.md` — lifecycle contracts |
 | `hooks/` | `block-qa-repo-git-writes` |
