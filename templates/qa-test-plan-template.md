@@ -53,7 +53,7 @@ date: # YYYY-MM-DD
 
 ### API Failures (Hypothetical)
 
-<!-- One row per call the feature makes, with no step that causes the failure. "test data" says: hypothetical, relevant only if call X actually fails. -->
+<!-- One row per call the feature makes, with no step that causes the failure. "comments" says: hypothetical, relevant only if call X actually fails. -->
 | id | screen/flow | steps | expected result | test data | comments |
 |---|---|---|---|---|---|
 | API1 | | | | | |

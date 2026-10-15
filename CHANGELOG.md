@@ -4,6 +4,24 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.0] - 2026-10-15
+
+Updated test-case writing rules from the QA team.
+
+### Changed
+- **Breaking for plans written with 0.9.0:**
+  - The hypothetical-failure marker `בדיקה היפותטית: …` moves from Test Data to **Comments**. `automation-test-writer` and `/set-qa-scope` look for it in Comments and, for older plans, still in Test Data.
+  - **The logger is a debugging tool, not something to test.** No logger check for anything visible on screen; a logger expectation is written only when the request itself is the behavior under test and nothing in the app shows it, with the call named in Expected Result. `אימות בלוגר` is no longer written in Test Data.
+  - A device change in the middle of a test (e.g. turning airplane mode off) is a step in Action; Test Data holds only the state at the start.
+- **Test Data is strict:** only the required user or a parameter set before the test starts. Repeat notes (`חזור על הבדיקה ב…`) move to Comments.
+- **Comments:** Figma–spec gaps state both versions only, not which one is the source of truth. No Figma node ids anywhere in the file — frames are named. Rules the tester already set are never repeated.
+- **Expected Result** describes what the tester sees; API field names only where the visible value can't show which field fed it.
+- New quality rule: no irrelevant test cases (something another case already shows).
+- Required cases per data-rule type: new rows for locally saved settings, features that depend on a device capability, and choices that depend on other user data; composed strings add a Latin-letter part; server-saved settings add persistence after leaving and after restart, and cancel-leave-re-enter.
+- General edge-case checklist: returning to the app from every hand-off (browser, dialer, mail app, device settings, share sheet); the document viewer in background and interruption checks; capability present but not set up; one row for the main flows on min/latest iOS and Android plus separate rows where they differ.
+- `block-qa-repo-git-writes` hook: commits and pushes in this plugin's own source repo are allowed (it's code, not QA artifacts); the QA repo is still blocked.
+- **`test-cases.xlsx` colors:** each file uses one of five soft color families (blue, green, purple, terracotta, teal), chosen from its content, so the same input always builds the same file. Header text is computed as black or white at 4.5:1 or better.
+
 ## [0.9.0] - 2026-10-13
 
 Test-case writing rules from the QA team, after running the plugin on real features.

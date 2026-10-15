@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PreToolUse hook: blocks a Bash-invoked `git commit`/`git push` when the active
-# repository is one this plugin touches — the QA repo it writes test plans and
-# coverage reports into (test-plan.md / coverage-report.md / test-cases.xlsx),
-# or this plugin's own source repo. Those artifacts are always reviewed and
-# committed by hand by the QA engineer.
+# repository is the QA repo this plugin writes test plans and coverage reports
+# into (test-plan.md / coverage-report.md / test-cases.xlsx). Those artifacts are
+# always reviewed and committed by hand by the QA engineer. This plugin's own
+# source repo is code, not QA artifacts, so commits there are allowed.
 #
 # The guard is scoped to those repositories on purpose. An earlier version
 # matched the command string alone and therefore blocked `git commit` in EVERY
@@ -45,11 +45,12 @@ repo_root="$(git -C "$run_dir" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 repo_root="$(canonical "$repo_root")"
 [ -n "$repo_root" ] || exit 0
 
-# 1. This plugin's own source repo — identified by its manifest rather than by
-#    folder name, so a differently-named clone is still protected.
+# 1. This plugin's own source repo is always allowed — identified by its
+#    manifest, and checked first so the folder-name fallback below (its folder
+#    may well contain "qa") never blocks it.
 manifest="$repo_root/.claude-plugin/plugin.json"
 if [ -f "$manifest" ] && [ "$(jq -r '.name // empty' "$manifest" 2>/dev/null)" = "ono-plugin-qa" ]; then
-  block "this plugin's own repository"
+  exit 0
 fi
 
 # 2. The QA repo, resolved exactly the way the commands resolve it (see
