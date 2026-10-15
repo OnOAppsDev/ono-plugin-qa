@@ -10,8 +10,8 @@ Contract for the Hebrew/RTL Excel export that `/create-qa-test-plan` and `/sync-
 | B | Summary | 1–2 sentences, Hebrew: what is tested, not how. |
 | C | Action | Hebrew steps, one per line in the same cell. The builder numbers them `1.`, `2.`, … |
 | D | Expected Result | Hebrew, third person, future tense, verifiable. |
-| E | Test Data/Parameter | Hebrew. Blank unless a special condition applies (user, device state, flag, hypothetical failure, `אימות בלוגר`). |
-| F | Comments | Hebrew. Blank unless something important isn't covered by the other columns. |
+| E | Test Data/Parameter | Hebrew. Only the required user or a parameter set before the test starts (flag, CMS content, device state); otherwise blank. |
+| F | Comments | Hebrew. Blank unless something important isn't covered by the other columns (Figma–spec gap, undefined behavior, hypothetical marker, repeat note). |
 
 ## Language
 
@@ -34,7 +34,7 @@ Omit a group with no rows — never emit a header with nothing under it.
 
 ## Styling (applied by the builder — don't override)
 
-One sheet, right-to-left, Arial. Column header row frozen, deepest shade with white text; section rows a lighter shade of the same family; sub-section rows lighter still, both with black text (every level at least 4.5:1 contrast). White body, thin light-gray borders, no gridlines, text right/top aligned and wrapped with an indent, row heights sized to the text. Column widths A 11, B 40, C 58, D 62, E 42, F 46.
+One sheet, right-to-left, Arial. One soft color family per file (blue, green, purple, terracotta or teal, picked from the file's content): column header row frozen in the deepest shade; section rows a lighter shade of the same family; sub-section rows lighter still. Header text is black or white, whichever contrasts better (every level at least 4.5:1). White body, thin light-gray borders, no gridlines, text right/top aligned and wrapped with an indent, row heights sized to the text. Column widths A 11, B 40, C 58, D 62, E 42, F 46.
 
 ## Intermediate JSON shape
 

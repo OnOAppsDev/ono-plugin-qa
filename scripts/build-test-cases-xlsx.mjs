@@ -3,6 +3,7 @@
 // machine this runs on, only Node (bundled with Claude Code itself).
 'use strict';
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 
@@ -18,12 +19,34 @@ const groups = Array.isArray(data.groups) ? data.groups : [];
 const HEADERS = ['Test ID', 'Summary', 'Action', 'Expected Result', 'Test Data/Parameter', 'Comments'];
 const WIDTHS = [11, 40, 58, 62, 42, 46];
 
-// One soft color family, a lighter shade per header level. Text colors were picked
-// for at least 4.5:1 contrast (WCAG AA); qa-ledger.test.mjs re-checks every pair from the built file.
+// Soft color families from the QA team's guide, a lighter shade per header level:
+// column header row, section rows, sub-section rows.
+const FAMILIES = [
+  ['4A6FA5', 'B4C7E7', 'DCE6F2'], // blue
+  ['4A7363', 'B7D3C1', 'E2EFE6'], // green
+  ['6E5E99', 'CBC2E0', 'E9E4F3'], // purple
+  ['8C5E58', 'E3C3BE', 'F4E6E3'], // terracotta
+  ['3F7A7A', 'B3D6D3', 'E0F0EE'], // teal
+];
+
+// Black or white, whichever contrasts better; throws if neither reaches 4.5:1 (WCAG AA).
+function headerTextColor(bg) {
+  const c = [0, 2, 4].map((i) => parseInt(bg.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+  const lum = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const onBlack = (lum + 0.05) / 0.05;
+  const onWhite = 1.05 / (lum + 0.05);
+  const [text, ratio] = onBlack >= onWhite ? ['000000', onBlack] : ['FFFFFF', onWhite];
+  if (ratio < 4.5) throw new Error(`Header color ${bg} has poor contrast with both black and white`);
+  return text;
+}
+FAMILIES.flat().forEach(headerTextColor); // self-check: every shade passes
+
+// Variety between tables, but the same input always builds the same file.
+const [headerFill, groupFill, subgroupFill] = FAMILIES[crypto.createHash('sha256').update(JSON.stringify(groups)).digest()[0] % FAMILIES.length];
 const PALETTE = {
-  header: { fill: '4A6FA5', text: 'FFFFFF' }, // column header row
-  group: { fill: 'B4C7E7', text: '000000' }, // section rows
-  subgroup: { fill: 'DCE6F2', text: '000000' }, // sub-section rows
+  header: { fill: headerFill, text: headerTextColor(headerFill) },
+  group: { fill: groupFill, text: headerTextColor(groupFill) },
+  subgroup: { fill: subgroupFill, text: headerTextColor(subgroupFill) },
 };
 
 const STYLE_HEADER = 1;

@@ -8,7 +8,7 @@ These rules come from the QA team's own experience executing the plugin's output
 ## 1. Before writing
 
 1. **Read the app knowledge file** (`<qa-repo>/app-knowledge.md`, shape in `templates/app-knowledge-template.md`) before writing anything. If it doesn't exist, create it from the template. Reuse its navigation paths word for word, and follow its "What the tester can control" section (§3). Update it as new information arrives (spec, Figma, conversation): add only what a source states, never extrapolate, and record contradictions between sources as QA notes instead of resolving them.
-2. **Image-heavy specs (docx/PDF):** text extraction isn't enough — also view the embedded images; UI mockups often live there.
+2. **Image-heavy specs (docx/PDF):** text extraction isn't enough — also view the embedded images; UI mockups often live there. When reviewing an existing test case file, read every row and state the total row count you read.
 3. **After 2 failed attempts with any approach, stop and propose an alternative.** Never loop.
 
 ## 2. Figma
@@ -17,7 +17,7 @@ Figma is the source of truth for UI unless the spec says otherwise. Never write 
 
 - Workflow: `get_metadata` without a node id → pages → `get_metadata` on the page/section → frames → `get_screenshot` on each frame. Screenshot sub-nodes (a single card) when a full frame renders too small to read.
 - Check **every** frame in the relevant section, not only the ones the spec links to — sections often hold error screens, drawers, popups and alternate states the spec never mentions. Frames that exist only in Figma still get test cases (undefined-behavior policy, §5).
-- Node ids in the spec may be outdated. If one isn't found, find the frame by name in the section metadata and note the new id.
+- Node ids in the spec may be outdated. If one isn't found, find the frame by name in the section metadata. Never write node ids (old or new) in the test cases — name the frame (`פריים Privacy`); if the change matters, mention it by frame name in the final summary.
 - Figma may only resolve nodes on the page currently open; if nodes come back empty or "not found", ask the human to open that page in Figma and retry. If that can't be done now, mark the related test cases in Comments as not yet compared to Figma.
 - **Static-text table — build it before writing test cases.** List every fixed text in the feature (screen titles, card titles, labels, buttons, popup/drawer titles and texts, error-screen texts) with the spec text and the Figma text side by side, and compare them **character by character**. Small differences count: a missing or extra yod (`הבטחון` / `הביטחון`), `״` vs `"`, `”` vs `"`, `/` vs `-`, spaces, punctuation. When they differ, Expected Result uses the Figma text and Comments state both. When Figma has a clear typo, Expected Result uses the correct text and Comments state the typo so it isn't copied into the app. The table is a working tool, not part of the output.
 - Also check: sample data that's wrong (phone numbers with the wrong digit count, dates without leading zeros) — say so in Comments so nobody compares against it; popups/drawers drawn over an old screen or a screen from another flow — note the background isn't part of the design; several frames of the same screen — compare them to each other.
@@ -27,11 +27,11 @@ Figma is the source of truth for UI unless the spec says otherwise. Never write 
 
 The app knowledge file's "What the tester can control" section lists the backend services the tester can change (for example Firebase flags/Remote Config/push and Umbraco content) and whether a read-only network logger is available. If the section is empty, ask the human once and record the answer there.
 
-- **Service failures the tester can't cause are still written** — API errors, failed saves, error screens — with the full navigation path and expected behavior, but **without** any "simulate the failure" step and without proxy/mock instructions. They are **hypothetical test cases**, marked in Test Data: `בדיקה היפותטית: רלוונטית רק אם הקריאה X נכשלת בפועל`. If the tester hits the failure for real, they know what should happen; otherwise they skip it.
+- **Service failures the tester can't cause are still written** — API errors, failed saves, error screens — with the full navigation path and expected behavior, but **without** any "simulate the failure" step and without proxy/mock instructions. They are **hypothetical test cases**, marked in Comments (never in Test Data): `בדיקה היפותטית: רלוונטית רק אם הקריאה X נכשלת בפועל`. If the tester hits the failure for real, they know what should happen; otherwise they skip it.
 - **Don't write test cases that need an action in a service the tester can't access** — editing backend data, corrupting or emptying an API response. They can't be executed. (Needing an existing test user with specific data is fine — that's choosing a user, not changing a service.)
 - Changes in the services the tester *can* access are valid — put the exact flag/content change in Test Data.
 - Device-level conditions are always valid: airplane mode, permissions, device language, font size, dark mode, network limiting (Network Link Conditioner on iOS, developer options on Android).
-- **Request-level expectations are valid when a logger is available**: which call is sent, how many times, with which parameters, or that no call is sent. See §5.
+- **The logger is a debugging tool, not something to test.** Never check in the logger that a call was sent (or what it returned) when the result is visible in the app — if the data appears, the call succeeded; if it doesn't, the row that displays it fails and the tester opens the logger themselves. A logger expectation is valid only when the request itself is the behavior under test **and** nothing in the app shows it (e.g. "ביטול" must not send `UpdateMessageDeliveryOption`; a double tap on save sends one request, not two). See §5.
 
 ## 4. Columns
 
@@ -68,8 +68,8 @@ Right:
 - Include scrolling when the target is below the fold (`גלול לכרטיס "חשבון בנק"`).
 - If the app is reopened mid-test, write the steps after reopening too (`סגור את האפליקציה לגמרי` → `פתח את האפליקציה מחדש` → the navigation path again, without re-login if the session persists).
 - Build each navigation path once and reuse it identically in every test case for that screen; store it in the app knowledge file's "Screens & navigation".
-- **Preconditions never go in Action**: which user to log in with, feature flags, how a failure would happen, enabling airplane mode before the test, a permission blocked beforehand — all go in Test Data. Action holds only what the tester does in the app plus the device actions that are part of the scenario (backgrounding, rotating, answering a call, opening device settings from an in-app button, returning).
-- When an environment change must happen mid-test, put it in Test Data with the step number: `לפני שלב 4 יש להחזיר את השירות לפעולה`.
+- **Preconditions never go in Action**: which user to log in with, feature flags, enabling airplane mode before the test, a permission blocked beforehand — all go in Test Data. Action holds only what the tester does in the app plus the device actions that are part of the scenario (backgrounding, rotating, answering a call, opening device settings from an in-app button, returning).
+- When a device change is part of the scenario at a specific moment (e.g. turning the internet back on before tapping "נסה שוב"), write it as a step in Action: `כבה את מצב טיסה`. Test Data holds only the state at the start of the test.
 
 ### Expected Result
 - Third person, future tense, subject first: `האפליקציה תפתח את העמוד`, `האפליקציה תציג...`, `האפליקציה לא תשנה...`.
@@ -96,26 +96,27 @@ Right:
 - Don't write a test case whose whole point is a value that "stays as is" — it belongs inside the test case that displays that component.
 - Never write untestable expectations (`יש לתעד את התנהגות האפליקציה`, `צפוי שתוצג הודעה או ערך דומה`). "Won't crash" alone is too weak — add the screen and state.
 - **Undefined behavior — one fixed policy.** Expected Result holds only what is certain and visible (which screen remains, which components and values are shown, no crash). Comments start with `לא מוגדר באיפיון:` + what exactly is undefined, then `צפי סביר:` + the most likely behavior, then `לעדכן את התוצאה הצפויה לאחר החלטה.` Never put the guess in Expected Result. An assumption about what a control does is also undefined behavior. The same gap is also logged under Open Questions in `test-plan.md`.
-- **Request-level expectations:** allowed when the request itself is the behavior under test. Visible result first, then the request result, and `אימות בלוגר: <call name>` in Test Data. Example: `האפליקציה תסגור את סרגל השמירה ותסמן שוב את "בהודעת SMS לנייד (למספר ישראלי בלבד)". בלוגר לא תופיע קריאה ל-UpdateMessageDeliveryOption.`
+- **Expectations checked in the logger:** only per §3 — the request itself is the behavior under test and nothing in the app shows it. Never add a logger check to confirm that data visible on screen was loaded. Visible result first, then the request result, naming the call in the Expected Result itself; nothing about the logger goes in Test Data. Example: `האפליקציה תסגור את סרגל השמירה ותסמן שוב את "בהודעת SMS לנייד (למספר ישראלי בלבד)". בלוגר לא תופיע קריאה ל-UpdateMessageDeliveryOption.`
 - **One outcome per row.** No multi-stage expectations that check two behaviors (a change and its persistence after restart) — split them. Multi-stage is fine only for one behavior ("loader, then the screen").
 - Don't invent behavior the sources don't state. Omission beats a fabricated expectation.
+- **Write what the tester sees.** Describe screens, texts and values as they appear in the app. API field names and record types (`workPhonePrefix1`, `phoneType=3`) belong in Test Data only when they define the required user, or in a logger expectation §3 allows. Use them in Expected Result only when the visible value alone can't show which source fed it (e.g. a mapping test where two similar fields hold different values).
 
 ### Test Data/Parameter
-Only for special conditions:
-- **Which user** when a specific one is needed: `יוזר להתחברות: משתמש עם 3 ילדים`, `יוזר להתחברות: משתמש עם msgDeliveryOptionId=2`, or the user type/role in apps that have several. When it doesn't matter, don't mention a user.
-- Device and permission state: `הרשאת התראות חסומה לאפליקציה בהגדרות המכשיר`, `מכשיר Android`, `מצב טיסה מופעל`.
-- `בדיקה היפותטית: …` for failure tests (§3).
-- Exact flag / remote-config / CMS-content changes the test depends on.
-- Network conditions: `רשת מוגבלת ל-3G (Network Link Conditioner ב-iOS או הגבלת רשת בהגדרות המפתחים ב-Android)`.
-- `חזור על הבדיקה ב…` where §6 allows a repeat note.
-- `אימות בלוגר: <call name>`.
+**Strict rule: only the conditions needed to run the test.** Fill it in exactly two cases:
+- **A user with specific data or of a specific type is required:** `יוזר להתחברות: משתמש עם 3 ילדים`, `יוזר להתחברות: משתמש עם msgDeliveryOptionId=2`, or the user type/role in apps that have several. When it doesn't matter, don't mention a user.
+- **A parameter that must be set before the test starts:** an exact flag / remote-config / CMS-content value, or a device setting: `הרשאת התראות חסומה לאפליקציה בהגדרות המכשיר`, `מצב טיסה מופעל`, `מכשיר Android`, `מכשיר ללא חומרה לזיהוי ביומטרי`, `רשת מוגבלת ל-3G (Network Link Conditioner ב-iOS או הגבלת רשת בהגדרות המפתחים ב-Android)`.
+
+Nothing else goes here: hypothetical markers, `חזור על הבדיקה ב…`, Figma–spec gaps and undefined behavior → Comments; logger checks → named in Expected Result; steps and mid-test changes → Action; why the test exists or a restatement of the expected result → nowhere. If neither case applies, leave it empty.
 - **Deterministic data:** if the result depends on a starting value, fix it here and name the resulting value in Expected Result. No `בחר אפשרות שונה מהמסומנת` — name the option. Prefer explicit example values (`אנשי קשר עם displayOrder 3, 1, 2 ואחד בלי ערך`).
 
 ### Comments
-Only for something important not covered elsewhere: Figma–spec discrepancies (both sides and which is the source of truth), Figma typos, undefined behavior (policy above), dependencies to verify with dev. Write the actual question or fact — never reference documents that aren't in the file ("see open question 17").
+Only for something important not covered elsewhere: Figma–spec discrepancies (state both versions only — not which one is the source of truth), Figma typos, undefined behavior (policy above), dependencies to verify with dev, the hypothetical-failure marker (§3), repeat notes `חזור על הבדיקה ב…` (§6). Write the actual question or fact — never reference documents that aren't in the file ("see open question 17").
+
+Never write, in Comments or anywhere in the file: rules the tester already set or that are in this skill ("Figma is the source of truth", "the expected result follows Figma"); Figma node ids (`15556:5618`) — name the frame (`פריים Privacy`, `פריים "סעיפי נכות" עם המגירה`), and tell same-named frames apart by what's visible in them.
 
 ## 6. Quality rules
 
+- **No irrelevant test cases.** Don't write a case that checks something the tester sees anyway in another case — mainly a logger check that the call loading a screen or object was sent (§3). Remove such rows before delivering.
 - **No unnecessary duplicates.** Every test case checks something no other one does. Common duplicates: a "navigate to X" case next to the "X structure" case that already opens X the same way; the same format check repeated in functional, edge, RTL and accessibility sections; the same layout check repeated per screen.
 - **Split vs. repeat — decide by how the result would be reported:**
   - **Separate rows** when each variant needs its own Pass/Fail: each enum value from the server, each user/data condition, each permission state, each platform when behavior differs, each data-loading screen in offline/API-failure tests.
@@ -145,7 +146,7 @@ For every data rule in the sources (every row of a data-mapping table, every com
 
 | Rule type | Required cases |
 |---|---|
-| Composed string (address, full name, "X% …") | all parts present; each optional part missing on its own; leading/trailing spaces |
+| Composed string (address, full name, "X% …") | all parts present; each optional part missing on its own; leading/trailing spaces; a part in Latin letters inside Hebrew text (mixed direction, e.g. a town abroad) |
 | Lookup by code (city, country, phone prefix, marital status) | known code; code missing from the lookup table; a value that must come from the code and not from a similar ready-made field |
 | Field chosen among similar fields (`phoneType=3` vs `mainPhone`) | a user for whom the two values differ |
 | Conditional element (icon, button, banner, sub-card) | shown; hidden; data present but invalid or partial (prefix without number, email without @, only the second phone) |
@@ -154,7 +155,10 @@ For every data rule in the sources (every row of a data-mapping table, every com
 | List | 0 items; 1 item; 8+ items; sort order with explicit values (displayOrder 3, 1, 2 and one empty) |
 | Missing value with a fallback ("אין מידע") | each field with a fallback, with a user missing it |
 | Device-permission toggle | granted; denied (popup); granted via "go to settings" and return; return without granting; revoked in device settings while the app is open |
-| Server-saved setting | change + save success; cancel; save failure (hypothetical); save offline; double tap on save; reselect the original value; leave with an unsaved change; background with an unsaved change; kill the app mid-save |
+| Locally saved setting (toggle, radio) | default on a fresh install; each change (separate rows); kept after leaving and re-entering the screen; kept after restarting the app; the effect of the setting itself whenever it can be triggered through a service the tester controls (e.g. send a Push to check vibration) — if the sources don't define the effect, the certain part in Expected Result and the effect per the undefined-behavior policy (§5) |
+| Feature that depends on a device capability (biometrics, dialer, mail app, browser, camera) | capability absent; present but not set up (no enrolled fingerprint/Face ID, no mail account); present and set up |
+| Choice that depends on other user data (delivery channel, contact method, payment method) | a user whose data fits the choice; a user who lacks the data it needs ("במייל" for a user without an email); a user whose data doesn't fit it (SMS "למספר ישראלי בלבד" for a non-Israeli number). If undefined, the undefined-behavior policy (§5) |
+| Server-saved setting | change + save success; kept after leaving and re-entering the screen; kept after restarting the app; cancel; cancel, leave and re-enter (the original value is shown); save failure (hypothetical); save offline; double tap on save; reselect the original value; leave with an unsaved change; background with an unsaved change; kill the app mid-save |
 | Logout | open; confirm; cancel; X; tap on the dark background; failure (hypothetical); double tap on confirm; reopen after logout; Android back after logout; switch to another user (no stale data) |
 | External link / WebView | opens the right destination (browser vs WebView per the sources); close/return; session carried into a WebView that should have it; offline |
 
@@ -165,17 +169,18 @@ Go over every item and report it in the plan's "Edge-Case Checklist Report" as `
 - Disconnect mid-load
 - Offline per action type: save, download/export, WebView, external link
 - Slow network: loader shown, no "אין מידע" / empty-title flash before data arrives
-- App to background and back with a drawer open, a popup open, an unsaved change
+- App to background and back with each transient component open: drawer, popup, document viewer, unsaved change in a save bar
 - Session expiry while on a feature screen
 - Switching users after logout — no data of the previous user
-- Interruptions: incoming call, notification
+- Interruptions (incoming call, notification) on a regular screen and with a drawer or the document viewer open
+- Returning to the app from every hand-off outside it: external browser, dialer, mail app, device settings, share sheet — which screen and which state (open drawer, selected values) are shown on return
 - Android back: sub-screen, drawer, popup, login screen after logout
 - iOS edge-swipe back
 - Rotation
 - Rapid double navigation (two different cards; the same card several times)
 - Small screen; large screen / tablet
-- iOS and Android, min and latest supported OS versions
-- Device without dialer / mail app / browser
+- iOS and Android, min and latest supported OS versions — one row that runs the main flows on all of them, plus separate rows wherever behavior differs per platform
+- Device without dialer / mail app / browser, and with a capability present but not set up (§7.1)
 - Killing the app mid-save
 - Device language other than the app language (including another RTL language such as Arabic)
 - Screenshots of sensitive data (only if the sources say something about it)
@@ -184,12 +189,12 @@ Go over every item and report it in the plan's "Edge-Case Checklist Report" as `
 
 1. **Spelling and sense, especially Hebrew.** Read every cell; fix typos, broken sentences, gender/number agreement and inconsistent terms.
 2. Every Action starts with `התחבר לחשבון` and has no "go to screen X" shortcut.
-3. No preconditions in Action; every user, data, permission, device condition and service change is in Test Data.
-4. Every Expected Result is third person, future tense, verifiable, and free of the §5 vague phrasings.
-5. One scenario per row; components of a scenario listed together; no unnecessary duplicates.
-6. Failure cases are hypothetical, with no simulation step; nothing needs a service the tester can't access; every request-level expectation has `אימות בלוגר`.
+3. No preconditions in Action; every user, data, permission, device condition and service change is in Test Data. Test Data holds nothing else: no comments, logger checks, hypothetical markers or repeat notes.
+4. Every Expected Result is third person, future tense, verifiable, free of the §5 vague phrasings, and describes what the tester sees — API field names only where §5 allows them.
+5. One scenario per row; components of a scenario listed together; no unnecessary duplicates and no irrelevant cases.
+6. Failure cases are hypothetical (marked in Comments), with no simulation step; nothing needs a service the tester can't access. Logger expectations exist only where nothing in the app shows the behavior (§3).
 7. Every screen, button, popup, drawer, toggle and back button from the sources is covered; every Figma frame was reviewed.
-8. The static-text table was built; every Figma–spec difference is in Comments and in the summary.
+8. The static-text table was built; every Figma–spec difference is in Comments (both versions only) and in the summary; no Figma node ids anywhere.
 9. Fixed vocabulary everywhere; no placeholders; every data-dependent case has deterministic Test Data.
 10. Undefined behaviors follow the §5 policy.
 11. **Coverage map:** every spec bullet, every data-mapping row and every Figma frame maps to the row(s) that test it; every §7.1 rule type has its required cases. List anything not covered, with the reason.
@@ -198,7 +203,7 @@ Go over every item and report it in the plan's "Edge-Case Checklist Report" as `
 
 ## 9. Working with the tester
 
-- Reply in the language the tester writes in.
+- Reply in the language the tester writes in. That applies to chat only — it never changes the file's language rules (English headers, Hebrew content).
 - Don't make structural decisions they didn't ask for (splitting into sheets, renaming or reordering columns). If something seems useful, offer it in one line after delivering.
 - Corrections are precise: apply them exactly and fully.
 - When asked to compare work, including your own, be honest: say which is better and why, with concrete examples.

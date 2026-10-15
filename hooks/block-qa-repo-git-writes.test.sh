@@ -32,6 +32,10 @@ OTHER_REPO="$(new_repo "$WORK/ono-mobile-dev-plugin")"
 PLUGIN_REPO="$(new_repo "$WORK/some-clone-name")"
 mkdir -p "$PLUGIN_REPO/.claude-plugin"
 printf '{\n  "name": "ono-plugin-qa",\n  "version": "0.4.1"\n}\n' >"$PLUGIN_REPO/.claude-plugin/plugin.json"
+# The real checkout is named ono-plugin-QA-ReactNative — "qa" in the folder name.
+PLUGIN_REPO_QA_NAME="$(new_repo "$WORK/ono-plugin-QA-clone")"
+mkdir -p "$PLUGIN_REPO_QA_NAME/.claude-plugin"
+cp "$PLUGIN_REPO/.claude-plugin/plugin.json" "$PLUGIN_REPO_QA_NAME/.claude-plugin/plugin.json"
 NOT_A_REPO="$WORK/loose-folder"
 mkdir -p "$NOT_A_REPO"
 # A feature folder inside the QA repo — the plugin writes test-plan.md into one
@@ -70,9 +74,10 @@ check "chained git commit in the QA repo"          block "$QA_REPO"     "git add
 check "git -C into the QA repo from elsewhere"     block "$OTHER_REPO"  "git -C $QA_REPO commit -m sneaky"
 check "git commit in a subdirectory of the QA repo" block "$QA_REPO/feature-slug" "git commit -m x"
 
-echo "--- blocked inside this plugin's own repo ---"
-check "git commit in the plugin repo (by manifest)" block "$PLUGIN_REPO" "git commit -m 'fix hook'"
-check "git push in the plugin repo (by manifest)"   block "$PLUGIN_REPO" "git push -u origin fix/branch"
+echo "--- allowed inside this plugin's own repo ---"
+check "git commit in the plugin repo (by manifest)"  allow "$PLUGIN_REPO"         "git commit -m 'fix hook'"
+check "git push in the plugin repo (by manifest)"    allow "$PLUGIN_REPO"         "git push -u origin fix/branch"
+check "git commit in the plugin repo with qa in its name" allow "$PLUGIN_REPO_QA_NAME" "git commit -m 'fix hook'"
 
 echo "--- allowed outside those repos (the bug this fixes) ---"
 check "git commit in an unrelated repo"            allow "$OTHER_REPO"  "git commit -m 'unrelated work'"

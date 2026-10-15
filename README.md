@@ -129,7 +129,7 @@ One hook is always active while the plugin is installed:
 
 | Hook | What it does |
 |---|---|
-| `block-qa-repo-git-writes` | Blocks any `git commit`/`git push` run via Bash while this plugin is active. It only ever writes local files (Markdown plans/reports, the Hebrew/RTL `test-cases.xlsx` export) — the QA engineer always reviews and pushes manually. |
+| `block-qa-repo-git-writes` | Blocks `git commit`/`git push` run via Bash in the QA repo (never in unrelated repos or in this plugin's own repo). It only ever writes local files (Markdown plans/reports, the Hebrew/RTL `test-cases.xlsx` export) — the QA engineer always reviews and pushes manually. |
 
 ## MCP servers
 
