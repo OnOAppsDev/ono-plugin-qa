@@ -32,7 +32,7 @@ date: # YYYY-MM-DD
 <!-- 1-2 sentences: which two documents were compared and when, so this report is self-contained if read later. -->
 ## Comparison Scope
 
-<!-- Every item from the dev handoff's Screens & Flows Touched / Edge Cases / Known Limitations / i18n-RTL Check / Accessibility Check sections, each marked Covered / Partially Covered / Gap, with matching QA test case id(s) if any. The core output of this report. -->
+<!-- Every item from the dev handoff's Screens & Flows Touched / Edge Cases / Known Limitations / i18n-RTL Check / Accessibility Check sections, each marked Covered / Out of QA scope (i18n/RTL items the team rules leave out — never a gap) / Partially Covered / Gap, with matching QA test case id(s) if any. The core output of this report. -->
 ## Coverage Matrix
 
 | dev-documented item | source section | status | matching test case(s) | notes |

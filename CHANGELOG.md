@@ -4,6 +4,27 @@ All notable changes to this plugin are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.0] - 2026-10-20
+
+Updated test-case writing rules from the QA team, after running 0.10.0 on a real project: plans test only scenarios that can really happen. Plans written with 0.10.0 keep working; some of their rows are now out of scope (see `/sync-qa-test-plan` below).
+
+### Added
+- **"What not to test"** (`qa-test-case-writing` §6.1): negative input only for fields the user can edit; abnormal server data, long texts and special characters only when the spec mentions them; WebViews tested for open, display and close only; no invisible field mapping, no out-of-scope elements, no devices missing a capability, no device matrices (tablet, small screen, OS min/latest, Arabic), no separate RTL section, no network cases beyond offline, background and incoming call once each, no server-setting extras, no touch target size.
+- **Merging rows** (§6.2): several fallbacks in one card share a row; hypothetical API failures are one row per screen or action, not per call.
+- Backend access is recorded per app, confirmed or not; rows that need an unconfirmed service get `רלוונטי רק אם יש גישה ל-Firebase` / `ל-Umbraco` in Comments.
+- `/create-qa-test-plan` asks upfront whether accessibility tests are needed (unless the spec or Figma already calls for them).
+- `/check-qa-coverage`: a fourth status, **Out of QA scope**, for dev i18n/RTL items the team rules leave out — listed, never counted as a gap.
+
+### Changed
+- **Undefined behavior:** Comments hold only `לא מוגדר באיפיון: …`, once per point. No `צפי סביר` and no "update after a decision" anywhere.
+- **Plain language:** no API field names or code values in Expected Result or Test Data (`מין = זכר`, not `gender=1`); no Figma sample names, numbers or addresses anywhere; never refer to the tester in the third person.
+- Comments: concrete `לברר: …` questions instead of a generic "verify with dev"; no notes about the process ("not compared to Figma yet" goes in the summary).
+- Summary states the action and its outcome. Expected Result may start with the component instead of "האפליקציה".
+- Sections: no i18n/RTL section (device language moves to universal edge cases); Accessibility is last and only when the sources call for it or QA asked for it. The Excel groups follow.
+- The required cases per data-rule type and the general edge-case checklist are trimmed to match "What not to test"; rapid double taps on actions are added to the checklist; WebView and external link are separate rows.
+- `/sync-qa-test-plan` leaves rows the new rules drop untouched and lists them in the Change Log as "out of scope under the current rules — remove?" for QA to decide.
+- `automation-test-writer` and the coverage check still read i18n/RTL sections in older plans.
+
 ## [0.10.0] - 2026-10-15
 
 Updated test-case writing rules from the QA team.

@@ -10,6 +10,7 @@ description: Designs a comprehensive QA test plan for a feature from its Figma d
 ## Inputs
 
 - A feature name.
+- Whether accessibility tests are wanted, and which, when the command asked.
 - A Figma file/frame link — via the `figma` MCP server — or an explicit note that none applies (e.g. no UI).
 - A spec/LLD doc path or link — or an explicit note that none exists.
 - Anything else QA supplied (notes, other docs) when asked.
@@ -26,9 +27,9 @@ description: Designs a comprehensive QA test plan for a feature from its Figma d
 3. Where a spec/LLD exists, read it for functional requirements and business logic — validation rules, edge-case behavior, backend constraints — that Figma alone wouldn't show.
 4. Enumerate every distinct screen, frame, and state shown or described — including loading, empty, error, success, permission-prompt, and validation-error variants. Treat an unlabeled or grayed-out variant as a state worth testing rather than skipping it.
 5. For each screen/flow, derive functional (happy-path) test cases that reference the actual button/label text and layout shown in the design, or the behavior described in the spec — not component names or assumed copy.
-6. Derive Error Screens, Edge Cases From Design/Spec (with the required cases per data-rule type), API Failures (hypothetical, one row per call) and Universal edge cases (the general checklist), and fill the Edge-Case Checklist Report item by item.
+6. Derive Error Screens, Edge Cases From Design/Spec (with the required cases per data-rule type), API Failures (hypothetical, one row per screen or action) and Universal edge cases (the general checklist), and fill the Edge-Case Checklist Report item by item.
 7. If Figma and the spec/LLD describe the same thing differently, don't silently pick one — log it as an open question.
-8. Write i18n/RTL and accessibility checks as plain scenario-level test steps (e.g. "confirm layout mirrors in RTL without text truncation") — do not cite or reference the dev plugin's `standards/` docs or any standard IDs; this plugin is scenario/behavior-focused only.
+8. Write accessibility checks only when the sources call for accessibility or the command passed the human's choice of accessibility tests — as the last section, in plain scenario-level steps. Otherwise leave the section out. Don't write a separate i18n/RTL section (`qa-test-case-writing` §6.1). Never cite the dev plugin's `standards/` docs or any standard IDs; this plugin is scenario/behavior-focused only.
 9. Note anything the sources leave ambiguous or don't show as an explicit open question — do not silently guess at an undesigned or unspecified state. Still write the affected test case per the undefined-behavior policy.
 10. Populate `templates/qa-test-plan-template.md` in full, including "Input Sources" (every source actually consulted, with explicit `N/A — <reason>` rows for anything that doesn't apply) and "Screens & Flows Covered" — this section is what `/check-qa-coverage` later matches against the dev handoff's "Screens & Flows Touched".
 11. Export the same test cases to `test-cases.xlsx` per `templates/qa-test-cases-xlsx-schema.md` — write them in natural Hebrew with the fixed vocabulary, write the schema's JSON shape to a temp file, and run `scripts/build-test-cases-xlsx.mjs` to produce the file.

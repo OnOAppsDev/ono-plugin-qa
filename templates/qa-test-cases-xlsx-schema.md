@@ -27,8 +27,7 @@ One sheet. Groups follow `test-plan.md`'s section order, each as a section row:
 3. מקרי קצה ובדיקות שליליות (from design/spec)
 4. כשלי API (בדיקות היפותטיות)
 5. מקרי קצה כלליים (universal)
-6. i18n / RTL
-7. נגישות
+6. נגישות — always last, and only when the plan has an Accessibility section
 
 Omit a group with no rows — never emit a header with nothing under it.
 

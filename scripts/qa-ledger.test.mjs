@@ -453,8 +453,8 @@ test('14 existing QA flows are untouched: xlsx export is identical and no old fl
   const out = path.join(tmp, 'test-cases.xlsx');
   const r = spawnSync(process.execPath, [path.join(HERE, 'build-test-cases-xlsx.mjs'), path.join(HERE, 'fixtures', 'xlsx', 'sample-test-cases.json'), out], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  // Recorded from the v0.10.0 builder (color family picked from the fixture's content).
-  assert.equal(xlsxEntryDigest(out), '50a39971ef4689e13d1118e0f791e88b202a8021c04d2c256966e30cc4247b34');
+  // Recorded from the v0.11.0 fixture (color family picked from its content).
+  assert.equal(xlsxEntryDigest(out), '278a580b0ddb3410163f979fd1f2faf6c0c4e9b5e7b882941d19422bec05c6d7');
   const entries = Object.fromEntries(xlsxEntries(out).map(([n, d]) => [n, d.toString('utf8')]));
   const sheet = entries['xl/worksheets/sheet1.xml'];
   assert.match(sheet, /rightToLeft="1" showGridLines="0"/);

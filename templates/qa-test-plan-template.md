@@ -53,7 +53,7 @@ date: # YYYY-MM-DD
 
 ### API Failures (Hypothetical)
 
-<!-- One row per call the feature makes, with no step that causes the failure. "comments" says: hypothetical, relevant only if call X actually fails. -->
+<!-- One row per screen or action (calls that serve the same screen share a row), with no step that causes the failure. "comments" says: hypothetical, relevant only if call X actually fails. -->
 | id | screen/flow | steps | expected result | test data | comments |
 |---|---|---|---|---|---|
 | API1 | | | | | |
@@ -64,14 +64,7 @@ date: # YYYY-MM-DD
 |---|---|---|---|---|---|
 | EC-U1 | | | | | |
 
-<!-- Scenario-level checks only — no standard IDs, no reference to standards/ docs. Plain-language, executable-by-eye checks: RTL mirroring, text truncation at long translated strings, number/date formatting. -->
-## i18n / RTL Test Cases
-
-| id | screen/flow | steps | expected result | test data | comments |
-|---|---|---|---|---|---|
-| I18N1 | | | | | |
-
-<!-- Scenario-level checks only, plain language: screen reader label/order, focus order, touch target size, color contrast — as testable steps, not standard citations. -->
+<!-- Optional, and always the last test section: include it only when the spec or Figma calls for accessibility, or the human confirmed which accessibility tests to include; otherwise delete this section. Scenario-level checks only, plain language: screen reader label/order, focus order, dynamic font size, color contrast — as testable steps, not standard citations. -->
 ## Accessibility Test Cases
 
 | id | screen/flow | steps | expected result | test data | comments |

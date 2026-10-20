@@ -121,7 +121,7 @@ Within the QA repo, artifacts are organized per feature: `<feature-slug>/test-pl
 
 ### How test cases are written
 
-Every test case follows the `qa-test-case-writing` skill, the QA team's own rules: steps start at login and spell out the full navigation path, with a fixed Hebrew vocabulary; preconditions (user, flags, device state) go in Test Data, never in the steps; expected results are concrete and verifiable; behavior the sources don't define goes in Comments (`לא מוגדר באיפיון: … צפי סביר: …`); failures the tester can't trigger are written as hypothetical cases; and every plan reports a general edge-case checklist item by item. Plans have Functional, Error Screens, Edge Cases (from design/spec, API failures, universal), i18n/RTL and Accessibility sections, and every table has `test data` and `comments` columns.
+Every test case follows the `qa-test-case-writing` skill, the QA team's own rules: steps start at login and spell out the full navigation path, with a fixed Hebrew vocabulary; preconditions (user, flags, device state) go in Test Data, never in the steps; expected results are concrete and verifiable; behavior the sources don't define goes in Comments as `לא מוגדר באיפיון: …`, never as a guess; data is written in plain language, never as API fields or Figma sample values; failures the tester can't trigger are written as hypothetical cases; a "what not to test" list keeps out scenarios that can't really happen; and every plan reports a general edge-case checklist item by item. Plans have Functional, Error Screens and Edge Cases (from design/spec, API failures, universal) sections, plus Accessibility when the sources call for it or QA asks for it, and every table has `test data` and `comments` columns.
 
 ## Safety hooks
 
